@@ -9,29 +9,81 @@ import type {
   AdminOrder,
   AdminProduct,
   AdminProductPayload,
+  UploadResponse,
 } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081";
+const LOCAL_API_BASE_URL = import.meta.env.VITE_LOCAL_API_BASE_URL ?? "http://localhost:8081";
+const RENDER_API_BASE_URL = import.meta.env.VITE_RENDER_API_BASE_URL ?? "https://cyan-admin.onrender.com";
+const EXPLICIT_API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim();
+
+function normalizeBaseUrl(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function getApiBaseUrls() {
+  if (EXPLICIT_API_BASE_URL) {
+    return [normalizeBaseUrl(EXPLICIT_API_BASE_URL)];
+  }
+
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return [normalizeBaseUrl(LOCAL_API_BASE_URL), normalizeBaseUrl(RENDER_API_BASE_URL)];
+    }
+  }
+
+  return [normalizeBaseUrl(RENDER_API_BASE_URL)];
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read selected file"));
+    reader.readAsDataURL(file);
+  });
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
+  const isFormData = init?.body instanceof FormData;
+  const baseUrls = [...new Set(getApiBaseUrls())];
+  let lastNetworkError: unknown = null;
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+  for (const baseUrl of baseUrls) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        headers: {
+          ...(isFormData ? {} : { "Content-Type": "application/json" }),
+          ...(init?.headers ?? {}),
+        },
+        ...init,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed: ${response.status}`);
+      }
+
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
+      return response.json() as Promise<T>;
+    } catch (error) {
+      if (error instanceof TypeError) {
+        lastNetworkError = error;
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  if (response.status === 204) {
-    return undefined as T;
+  if (lastNetworkError) {
+    throw lastNetworkError;
   }
 
-  return response.json() as Promise<T>;
+  throw new Error("No API base URL is configured");
 }
 
 export function formatCurrency(value: number) {
@@ -115,6 +167,32 @@ export const adminApi = {
     request<void>(`/api/admin/banners/${id}`, {
       method: "DELETE",
     }),
+  uploadFile: async (file: File, folder = "general") => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", folder);
+
+    try {
+      return await request<UploadResponse>("/api/admin/uploads", {
+        method: "POST",
+        body: formData,
+      });
+    } catch (error) {
+      // This repo only ships the admin frontend, so local previews keep working
+      // even when no upload server is running during development.
+      if (error instanceof TypeError) {
+        const url = await readFileAsDataUrl(file);
+        return {
+          url,
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+        };
+      }
+
+      throw error;
+    }
+  },
 
   editorials: () => request<AdminEditorial[]>("/api/admin/editorials"),
   createEditorial: (payload: AdminEditorialPayload) =>

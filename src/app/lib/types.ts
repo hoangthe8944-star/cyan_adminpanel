@@ -202,3 +202,11 @@ export interface AdminEditorialPayload {
   coverMedia?: MediaAsset | null;
   sections: EditorialSection[];
 }
+
+export interface UploadResponse {
+  url: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+

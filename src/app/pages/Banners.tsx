@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 import { Badge } from "../components/ui/badge";
@@ -21,15 +21,6 @@ function FieldLabel({ children, required = false }: { children: string; required
       {required ? <span className="ml-1 text-[#dc2626]">*</span> : null}
     </Label>
   );
-}
-
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("Failed to read selected file"));
-    reader.readAsDataURL(file);
-  });
 }
 
 const emptyBannerForm: AdminBannerPayload = {
@@ -57,6 +48,8 @@ export function Banners() {
   const [mode, setMode] = useState<"create" | "edit" | "view">("create");
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
 
   const loadBanners = () => {
     adminApi.banners().then(setBanners).catch((err: Error) => setError(err.message));
@@ -106,17 +99,23 @@ export function Banners() {
       return;
     }
 
+    const setUploading = field === "url" ? setIsUploadingMedia : setIsUploadingThumbnail;
+    setUploading(true);
+    setError("");
+
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const uploaded = await adminApi.uploadFile(file, "banners");
       setForm((prev) => ({
         ...prev,
         media: {
           ...prev.media,
-          [field]: dataUrl,
+          [field]: uploaded.url,
         },
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to read selected file");
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -243,7 +242,7 @@ export function Banners() {
               </div>
               <div>
                 <FieldLabel required>Media Type</FieldLabel>
-                <Select disabled={mode === "view"} value={form.media.mediaType} onValueChange={(value) => setForm({ ...form, media: { ...form.media, mediaType: value as "IMAGE" | "MP4" } })}>
+                <Select disabled={mode === "view"} value={form.media.mediaType} onValueChange={(value) => setForm({ ...form, media: { ...form.media, mediaType: value as "IMAGE" | "MP4", url: "", thumbnailUrl: "" } })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="IMAGE">IMAGE</SelectItem>
@@ -270,18 +269,30 @@ export function Banners() {
                   <Input
                     type="file"
                     accept={form.media.mediaType === "MP4" ? "video/mp4" : "image/*"}
-                    disabled={mode === "view"}
+                    disabled={mode === "view" || isUploadingMedia}
                     onChange={(e) => handleMediaFileChange("url", e.target.files?.[0] || null)}
                   />
+                  {isUploadingMedia ? (
+                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Uploading media...
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <FieldLabel>Browse Thumbnail</FieldLabel>
                   <Input
                     type="file"
                     accept="image/*"
-                    disabled={mode === "view"}
+                    disabled={mode === "view" || isUploadingThumbnail}
                     onChange={(e) => handleMediaFileChange("thumbnailUrl", e.target.files?.[0] || null)}
                   />
+                  {isUploadingThumbnail ? (
+                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Uploading thumbnail...
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -321,7 +332,7 @@ export function Banners() {
               Active banner
             </label>
             {mode !== "view" ? (
-              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit}>
+              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit} disabled={isUploadingMedia || isUploadingThumbnail || !form.media.url}>
                 {mode === "create" ? "Create Banner" : "Save Changes"}
               </Button>
             ) : null}
