@@ -1,0 +1,134 @@
+import type {
+  AdminBanner,
+  AdminBannerPayload,
+  AdminCategory,
+  AdminCategoryPayload,
+  AdminDashboardResponse,
+  AdminEditorial,
+  AdminEditorialPayload,
+  AdminOrder,
+  AdminProduct,
+  AdminProductPayload,
+} from "./types";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+export function resolveImage(url?: { url?: string | null; thumbnailUrl?: string | null } | null) {
+  return url?.thumbnailUrl || url?.url || "https://placehold.co/800x600?text=Cyan";
+}
+
+export function parseJsonField<T>(value: string, fallback: T): T {
+  if (!value.trim()) {
+    return fallback;
+  }
+  return JSON.parse(value) as T;
+}
+
+export function formatJsonField(value: unknown) {
+  return JSON.stringify(value ?? null, null, 2);
+}
+
+export const adminApi = {
+  dashboard: () => request<AdminDashboardResponse>("/api/admin/dashboard"),
+
+  categories: () => request<AdminCategory[]>("/api/admin/categories"),
+  createCategory: (payload: AdminCategoryPayload) =>
+    request<AdminCategory>("/api/admin/categories", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateCategory: (id: string, payload: AdminCategoryPayload) =>
+    request<AdminCategory>(`/api/admin/categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteCategory: (id: string) =>
+    request<void>(`/api/admin/categories/${id}`, {
+      method: "DELETE",
+    }),
+
+  products: () => request<AdminProduct[]>("/api/admin/products"),
+  createProduct: (payload: AdminProductPayload) =>
+    request<AdminProduct>("/api/admin/products", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProduct: (id: string, payload: AdminProductPayload) =>
+    request<AdminProduct>(`/api/admin/products/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteProduct: (id: string) =>
+    request<void>(`/api/admin/products/${id}`, {
+      method: "DELETE",
+    }),
+
+  orders: () => request<AdminOrder[]>("/api/admin/orders"),
+  updateOrderStatus: (id: string, orderStatus: string, paymentStatus: string) =>
+    request<AdminOrder>(`/api/admin/orders/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ orderStatus, paymentStatus }),
+    }),
+
+  banners: () => request<AdminBanner[]>("/api/admin/banners"),
+  createBanner: (payload: AdminBannerPayload) =>
+    request<AdminBanner>("/api/admin/banners", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateBanner: (id: string, payload: AdminBannerPayload) =>
+    request<AdminBanner>(`/api/admin/banners/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteBanner: (id: string) =>
+    request<void>(`/api/admin/banners/${id}`, {
+      method: "DELETE",
+    }),
+
+  editorials: () => request<AdminEditorial[]>("/api/admin/editorials"),
+  createEditorial: (payload: AdminEditorialPayload) =>
+    request<AdminEditorial>("/api/admin/editorials", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateEditorial: (id: string, payload: AdminEditorialPayload) =>
+    request<AdminEditorial>(`/api/admin/editorials/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteEditorial: (id: string) =>
+    request<void>(`/api/admin/editorials/${id}`, {
+      method: "DELETE",
+    }),
+};

@@ -1,0 +1,204 @@
+export interface MediaAsset {
+  mediaType: "IMAGE" | "MP4";
+  url: string;
+  thumbnailUrl?: string | null;
+  altText?: string | null;
+}
+
+export interface AdminDashboardResponse {
+  totalCategories: number;
+  activeCategories: number;
+  totalProducts: number;
+  activeProducts: number;
+  totalOrders: number;
+  paidOrders: number;
+  totalBanners: number;
+  activeBanners: number;
+  totalEditorials: number;
+  publishedEditorials: number;
+}
+
+export interface AdminCategory {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  parentId?: string | null;
+  rootCategoryId?: string | null;
+  level: number;
+  status: "ACTIVE" | "INACTIVE";
+  displayOrder: number;
+  coverMedia?: MediaAsset | null;
+}
+
+export interface AdminCategoryPayload {
+  name: string;
+  slug: string;
+  description?: string | null;
+  parentId?: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  displayOrder: number;
+  coverMedia?: MediaAsset | null;
+}
+
+export interface ProductOptionValue {
+  code: string;
+  label: string;
+  swatchMedia?: MediaAsset | null;
+}
+
+export interface ProductOption {
+  type: string;
+  name: string;
+  values: ProductOptionValue[];
+}
+
+export interface VariantSelection {
+  optionType: string;
+  valueCode: string;
+  valueLabel: string;
+}
+
+export interface ProductVariant {
+  variantCode: string;
+  modelCode: string;
+  styleCode: string;
+  selections: VariantSelection[];
+  price: number;
+  compareAtPrice?: number | null;
+  costPrice?: number | null;
+  stockQuantity: number;
+  weightInGram?: number | null;
+  active: boolean;
+  media: MediaAsset[];
+}
+
+export interface AdminProduct {
+  id: string;
+  name: string;
+  slug: string;
+  sku: string;
+  shortDescription?: string | null;
+  description?: string | null;
+  brand?: string | null;
+  material?: string | null;
+  gemstone?: string | null;
+  primaryCategoryId: string;
+  categoryIds: string[];
+  tags: string[];
+  gallery: MediaAsset[];
+  options: ProductOption[];
+  variants: ProductVariant[];
+  minPrice: number;
+  maxPrice: number;
+  totalStock: number;
+  featured: boolean;
+  status: "DRAFT" | "ACTIVE" | "OUT_OF_STOCK" | "ARCHIVED";
+}
+
+export interface AdminProductPayload {
+  name: string;
+  slug: string;
+  sku: string;
+  shortDescription?: string | null;
+  description?: string | null;
+  brand?: string | null;
+  material?: string | null;
+  gemstone?: string | null;
+  primaryCategoryId: string;
+  categoryIds: string[];
+  tags: string[];
+  gallery: MediaAsset[];
+  options: ProductOption[];
+  variants: ProductVariant[];
+  featured: boolean;
+  status: "DRAFT" | "ACTIVE" | "OUT_OF_STOCK" | "ARCHIVED";
+}
+
+export interface AdminOrder {
+  id: string;
+  orderCode: string;
+  customer: {
+    fullName: string;
+    phoneNumber: string;
+    email?: string | null;
+  };
+  shippingAddress: {
+    fullName: string;
+    phoneNumber: string;
+    line1: string;
+    city: string;
+    country: string;
+  };
+  items: {
+    productName: string;
+    variantCode: string;
+    quantity: number;
+  }[];
+  totalAmount: number;
+  paymentStatus: string;
+  orderStatus: string;
+  paymentMethod: string;
+  note?: string | null;
+  createdAt?: string | null;
+}
+
+export interface AdminBanner {
+  id: string;
+  title: string;
+  slug: string;
+  placement: "MAIN" | "SUB";
+  media: MediaAsset;
+  redirectUrl?: string | null;
+  ctaLabel?: string | null;
+  active: boolean;
+  displayOrder: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+}
+
+export interface AdminBannerPayload {
+  title: string;
+  slug: string;
+  placement: "MAIN" | "SUB";
+  media: MediaAsset;
+  redirectUrl?: string | null;
+  ctaLabel?: string | null;
+  active: boolean;
+  displayOrder: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+}
+
+export interface EditorialSection {
+  heading: string;
+  subHeading?: string | null;
+  content?: string | null;
+  displayOrder: number;
+  media: MediaAsset[];
+}
+
+export interface AdminEditorial {
+  id: string;
+  title: string;
+  slug: string;
+  summary?: string | null;
+  body?: string | null;
+  topics: string[];
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  publishedAt?: string | null;
+  coverMedia?: MediaAsset | null;
+  sections: EditorialSection[];
+}
+
+export interface AdminEditorialPayload {
+  title: string;
+  slug: string;
+  summary?: string | null;
+  body?: string | null;
+  topics: string[];
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  publishedAt?: string | null;
+  coverMedia?: MediaAsset | null;
+  sections: EditorialSection[];
+}

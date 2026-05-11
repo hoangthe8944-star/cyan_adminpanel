@@ -1,0 +1,14 @@
+# Không commit thư viện
+node_modules/
+
+# Không commit thư mục build (khi chạy npm run build)
+dist/
+
+# Không commit các file log lỗi
+*.log
+
+# Không commit các file cấu hình cá nhân của VS Code
+.vscode/
+
+# Không commit file môi trường (chứa mật khẩu/API key)
+.env*
