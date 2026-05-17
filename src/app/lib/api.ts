@@ -37,6 +37,26 @@ function getApiBaseUrls() {
   return [normalizeBaseUrl(RENDER_API_BASE_URL)];
 }
 
+function resolveAssetBaseUrl() {
+  return getApiBaseUrls()[0] ?? "";
+}
+
+function normalizeAssetUrl(value?: string | null) {
+  if (!value) {
+    return value;
+  }
+
+  try {
+    return new URL(value).toString();
+  } catch {
+    if (value.startsWith("/")) {
+      return `${resolveAssetBaseUrl()}${value}`;
+    }
+
+    return value;
+  }
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -98,7 +118,7 @@ export function formatCurrency(value: number) {
 }
 
 export function resolveImage(url?: { url?: string | null; thumbnailUrl?: string | null } | null) {
-  return url?.thumbnailUrl || url?.url || "https://placehold.co/800x600?text=Cyan";
+  return normalizeAssetUrl(url?.thumbnailUrl) || normalizeAssetUrl(url?.url) || "https://placehold.co/800x600?text=Cyan";
 }
 
 export function parseJsonField<T>(value: string, fallback: T): T {
