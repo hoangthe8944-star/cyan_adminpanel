@@ -46,6 +46,21 @@ const emptyCollectionForm: AdminCollectionPayload = {
   },
 };
 
+function normalizeOptionalText(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizePublishedAt(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 export function Collections() {
   const [collections, setCollections] = useState<AdminCollection[]>([]);
   const [products, setProducts] = useState<AdminProduct[]>([]);
@@ -147,11 +162,31 @@ export function Collections() {
     setError("");
 
     try {
+      if (!form.name.trim() || !form.slug.trim()) {
+        setError("Name and slug are required");
+        return;
+      }
+
+      const normalizedCoverMedia = form.coverMedia?.url?.trim()
+        ? {
+            mediaType: "IMAGE" as const,
+            url: form.coverMedia.url.trim(),
+            thumbnailUrl: normalizeOptionalText(form.coverMedia.thumbnailUrl),
+            altText: normalizeOptionalText(form.coverMedia.altText),
+          }
+        : null;
+
       const payload: AdminCollectionPayload = {
         ...form,
-        publishedAt: form.publishedAt || null,
+        name: form.name.trim(),
+        slug: form.slug.trim(),
+        summary: normalizeOptionalText(form.summary),
+        description: normalizeOptionalText(form.description),
+        coverMedia: normalizedCoverMedia,
+        publishedAt: normalizePublishedAt(form.publishedAt),
         seo: {
-          ...(form.seo || {}),
+          title: normalizeOptionalText(form.seo?.title),
+          description: normalizeOptionalText(form.seo?.description),
           keywords: keywordsText.split(",").map((item) => item.trim()).filter(Boolean),
         },
       };
@@ -167,7 +202,7 @@ export function Collections() {
       setOpen(false);
       loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save collection");
+      setError(err instanceof Error ? `Failed to save collection: ${err.message}` : "Failed to save collection");
     }
   };
 
