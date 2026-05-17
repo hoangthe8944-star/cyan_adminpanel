@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { Eye, Grid3x3, List, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, Grid3x3, List, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -38,15 +38,6 @@ const emptyCategoryForm: AdminCategoryPayload = {
   },
 };
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("Failed to read selected file"));
-    reader.readAsDataURL(file);
-  });
-}
-
 export function Categories() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [categories, setCategories] = useState<AdminCategory[]>([]);
@@ -55,6 +46,8 @@ export function Categories() {
   const [selectedCategory, setSelectedCategory] = useState<AdminCategory | null>(null);
   const [form, setForm] = useState<AdminCategoryPayload>(emptyCategoryForm);
   const [error, setError] = useState("");
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
 
   const rootCategories = useMemo(() => categories.filter((item) => item.level === 1), [categories]);
 
@@ -132,18 +125,24 @@ export function Categories() {
       return;
     }
 
+    const setUploading = field === "url" ? setIsUploadingCover : setIsUploadingThumbnail;
+    setUploading(true);
+    setError("");
+
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const uploaded = await adminApi.uploadFile(file, "categories");
       setForm((prev) => ({
         ...prev,
         coverMedia: {
           ...(prev.coverMedia || emptyCategoryForm.coverMedia!),
           mediaType: "IMAGE",
-          [field]: dataUrl,
+          [field]: uploaded.url,
         },
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to read image file");
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -317,22 +316,54 @@ export function Categories() {
                 <Input
                   type="file"
                   accept="image/*"
-                  disabled={mode === "view"}
+                  disabled={mode === "view" || isUploadingCover}
                   onChange={(e) => handleCoverFileChange("url", e.target.files?.[0] || null)}
                 />
+                {isUploadingCover ? (
+                  <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Uploading cover...
+                  </p>
+                ) : null}
               </div>
               <div>
                 <FieldLabel>Browse Thumbnail</FieldLabel>
                 <Input
                   type="file"
                   accept="image/*"
-                  disabled={mode === "view"}
+                  disabled={mode === "view" || isUploadingThumbnail}
                   onChange={(e) => handleCoverFileChange("thumbnailUrl", e.target.files?.[0] || null)}
                 />
+                {isUploadingThumbnail ? (
+                  <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Uploading thumbnail...
+                  </p>
+                ) : null}
               </div>
             </div>
+            <div>
+              <FieldLabel>Alt Text</FieldLabel>
+              <Input
+                value={form.coverMedia?.altText || ""}
+                disabled={mode === "view"}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    coverMedia: {
+                      ...(form.coverMedia || emptyCategoryForm.coverMedia!),
+                      altText: e.target.value,
+                    },
+                  })
+                }
+              />
+            </div>
             {mode !== "view" ? (
-              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit}>
+              <Button
+                className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white"
+                onClick={submit}
+                disabled={isUploadingCover || isUploadingThumbnail}
+              >
                 {mode === "create" ? "Create Category" : "Save Changes"}
               </Button>
             ) : null}

@@ -127,20 +127,97 @@ export interface AdminOrder {
     fullName: string;
     phoneNumber: string;
     line1: string;
+    line2?: string | null;
+    ward?: string | null;
+    district?: string | null;
     city: string;
     country: string;
+    postalCode?: string | null;
   };
+  billingAddress?: {
+    fullName: string;
+    phoneNumber: string;
+    line1: string;
+    line2?: string | null;
+    ward?: string | null;
+    district?: string | null;
+    city: string;
+    country: string;
+    postalCode?: string | null;
+  } | null;
   items: {
+    productId: string;
     productName: string;
     variantCode: string;
+    thumbnailUrl?: string | null;
     quantity: number;
+    unitPrice?: number | null;
+    lineTotal?: number | null;
   }[];
+  subtotal?: number | null;
+  shippingFee?: number | null;
+  discountAmount?: number | null;
   totalAmount: number;
-  paymentStatus: string;
-  orderStatus: string;
-  paymentMethod: string;
+  currency?: string | null;
+  paymentStatus: "UNPAID" | "PENDING" | "PAID" | "REFUNDED" | "FAILED";
+  orderStatus: "PENDING" | "AWAITING_PAYMENT" | "PAID" | "PROCESSING" | "SHIPPED" | "COMPLETED" | "CANCELED" | "FAILED";
+  paymentMethod: "COD" | "MOMO";
   note?: string | null;
+  momoPayment?: {
+    partnerCode?: string | null;
+    requestId?: string | null;
+    momoOrderId?: string | null;
+    orderInfo?: string | null;
+    amount?: number | null;
+    requestType?: string | null;
+    redirectUrl?: string | null;
+    ipnUrl?: string | null;
+    payUrl?: string | null;
+    deeplink?: string | null;
+    qrCodeUrl?: string | null;
+    extraData?: string | null;
+    lang?: string | null;
+    message?: string | null;
+    transId?: number | null;
+    resultCode?: number | null;
+    responseTime?: string | null;
+  } | null;
   createdAt?: string | null;
+}
+
+export interface SeoMetadata {
+  title?: string | null;
+  description?: string | null;
+  keywords?: string[] | null;
+}
+
+export interface AdminCollection {
+  id: string;
+  name: string;
+  slug: string;
+  summary?: string | null;
+  description?: string | null;
+  coverMedia?: MediaAsset | null;
+  productIds: string[];
+  featured: boolean;
+  displayOrder: number;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  publishedAt?: string | null;
+  seo?: SeoMetadata | null;
+}
+
+export interface AdminCollectionPayload {
+  name: string;
+  slug: string;
+  summary?: string | null;
+  description?: string | null;
+  coverMedia?: MediaAsset | null;
+  productIds: string[];
+  featured: boolean;
+  displayOrder: number;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  publishedAt?: string | null;
+  seo?: SeoMetadata | null;
 }
 
 export interface AdminBanner {

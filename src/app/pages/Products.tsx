@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { Eye, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pencil, Plus, Search, Trash2 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -74,15 +74,6 @@ const createEmptyProductForm = (): AdminProductPayload => ({
 
 const VND_NUMBER_FORMAT = new Intl.NumberFormat("vi-VN");
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("Failed to read selected file"));
-    reader.readAsDataURL(file);
-  });
-}
-
 function formatVndInput(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "";
@@ -119,6 +110,17 @@ function parseOption(type: "MODEL" | "STYLE", name: string, value: string): Prod
   }
 
   return { type, name, values };
+}
+
+function ensureRequiredOptions(modelValuesText: string, styleValuesText: string, sku: string) {
+  const fallbackSeed = sku.trim() || "DEFAULT";
+  const fallbackModelLabel = `${fallbackSeed} Model`;
+  const fallbackStyleLabel = `${fallbackSeed} Style`;
+
+  return [
+    parseOption("MODEL", "Model", modelValuesText || fallbackModelLabel),
+    parseOption("STYLE", "Style", styleValuesText || fallbackStyleLabel),
+  ].filter(Boolean) as ProductOption[];
 }
 
 function buildSelections(variant: ProductVariant, options: ProductOption[]): VariantSelection[] {
@@ -191,6 +193,8 @@ export function Products() {
   const [compareAtPriceText, setCompareAtPriceText] = useState("");
   const [costPriceText, setCostPriceText] = useState("");
   const [error, setError] = useState("");
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
+  const [uploadingVariantMediaIndex, setUploadingVariantMediaIndex] = useState<number | null>(null);
 
   const loadData = () => {
     adminApi.products().then(setProducts).catch((err: Error) => setError(err.message));
@@ -273,6 +277,21 @@ export function Products() {
     }));
   };
 
+  const toggleCategory = (categoryId: string, checked: boolean) => {
+    setForm((prev) => {
+      const nextCategoryIds = checked
+        ? Array.from(new Set([...prev.categoryIds, categoryId]))
+        : prev.categoryIds.filter((id) => id !== categoryId);
+
+      return {
+        ...prev,
+        primaryCategoryId:
+          prev.primaryCategoryId === categoryId && !checked ? nextCategoryIds[0] || "" : prev.primaryCategoryId,
+        categoryIds: nextCategoryIds,
+      };
+    });
+  };
+
   const handleNameChange = (value: string) => {
     setForm((prev) => ({
       ...prev,
@@ -286,14 +305,19 @@ export function Products() {
       return;
     }
 
+    setIsUploadingGallery(true);
+    setError("");
+
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const uploaded = await adminApi.uploadFile(file, "products");
       setForm((prev) => ({
         ...prev,
-        gallery: [{ ...(prev.gallery[0] || createEmptyMedia()), [field]: dataUrl }],
+        gallery: [{ ...(prev.gallery[0] || createEmptyMedia()), [field]: uploaded.url }],
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to read image file");
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setIsUploadingGallery(false);
     }
   };
 
@@ -306,16 +330,21 @@ export function Products() {
       return;
     }
 
+    setUploadingVariantMediaIndex(mediaIndex);
+    setError("");
+
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const uploaded = await adminApi.uploadFile(file, "products");
       const currentMedia = primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()];
       updatePrimaryVariant({
         media: currentMedia.map((item, index) =>
-          index === mediaIndex ? { ...item, [field]: dataUrl } : item
+          index === mediaIndex ? { ...item, [field]: uploaded.url } : item
         ),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to read image file");
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setUploadingVariantMediaIndex(null);
     }
   };
 
@@ -323,10 +352,15 @@ export function Products() {
     setError("");
 
     try {
-      const options = [
-        parseOption("MODEL", "Model", modelValuesText),
-        parseOption("STYLE", "Style", styleValuesText),
-      ].filter(Boolean) as ProductOption[];
+      if (!form.primaryCategoryId.trim()) {
+        throw new Error("Primary category is required");
+      }
+
+      if (!form.name.trim() || !form.slug.trim() || !form.sku.trim()) {
+        throw new Error("Name, slug, and SKU are required");
+      }
+
+      const options = ensureRequiredOptions(modelValuesText.trim(), styleValuesText.trim(), form.sku);
 
       const gallery = primaryMedia.url.trim() ? [primaryMedia] : [];
       const variantTemplate: ProductVariant = {
@@ -335,11 +369,15 @@ export function Products() {
       };
       const variants = generateVariants(variantTemplate, options, primaryMedia);
 
+      if (!variants.length) {
+        throw new Error("At least one product variant is required");
+      }
+
       const payload: AdminProductPayload = {
         ...form,
         tags: tagsText.split(",").map((item) => item.trim()).filter(Boolean),
-        shortDescription: "",
-        categoryIds: form.primaryCategoryId ? [form.primaryCategoryId] : [],
+        shortDescription: form.shortDescription?.trim() || "",
+        categoryIds: Array.from(new Set([form.primaryCategoryId, ...form.categoryIds].filter(Boolean))),
         gallery,
         options,
         variants,
@@ -497,6 +535,15 @@ export function Products() {
                   <Input value={form.gemstone || ""} disabled={mode === "view"} onChange={(e) => setForm({ ...form, gemstone: e.target.value })} />
                 </div>
               </div>
+              <div className="mt-5">
+                <FieldLabel>Short Description</FieldLabel>
+                <Textarea
+                  className="min-h-24"
+                  value={form.shortDescription || ""}
+                  disabled={mode === "view"}
+                  onChange={(e) => setForm({ ...form, shortDescription: e.target.value })}
+                />
+              </div>
             </section>
 
             <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-6">
@@ -552,6 +599,23 @@ export function Products() {
                 />
               </div>
 
+              <div className="mt-5">
+                <FieldLabel>Category Coverage</FieldLabel>
+                <div className="mt-3 grid grid-cols-1 gap-3 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-4 md:grid-cols-2">
+                  {categories.map((category) => (
+                    <label key={category.id} className="flex items-start gap-3 rounded-xl bg-white px-4 py-3 text-sm text-[#06141B]">
+                      <input
+                        type="checkbox"
+                        checked={form.primaryCategoryId === category.id || form.categoryIds.includes(category.id)}
+                        disabled={mode === "view"}
+                        onChange={(e) => toggleCategory(category.id, e.target.checked)}
+                      />
+                      <span>{category.name}{form.primaryCategoryId === category.id ? " (primary)" : ""}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               <label className="mt-5 inline-flex items-center gap-3 rounded-full bg-[rgba(237,217,135,0.16)] px-4 py-3 text-sm font-medium text-[#7b5327]">
                 <input
                   type="checkbox"
@@ -578,19 +642,38 @@ export function Products() {
                   <Input
                     type="file"
                     accept="image/*"
-                    disabled={mode === "view"}
+                    disabled={mode === "view" || isUploadingGallery}
                     onChange={(e) => handleMediaFileChange("url", e.target.files?.[0] || null)}
                   />
+                  {isUploadingGallery ? (
+                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Uploading main image...
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <FieldLabel>Browse Thumbnail</FieldLabel>
                   <Input
                     type="file"
                     accept="image/*"
-                    disabled={mode === "view"}
+                    disabled={mode === "view" || isUploadingGallery}
                     onChange={(e) => handleMediaFileChange("thumbnailUrl", e.target.files?.[0] || null)}
                   />
                 </div>
+              </div>
+              <div className="mt-5">
+                <FieldLabel>Image Alt Text</FieldLabel>
+                <Input
+                  value={primaryMedia.altText || ""}
+                  disabled={mode === "view"}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      gallery: [{ ...(prev.gallery[0] || createEmptyMedia()), altText: e.target.value }],
+                    }))
+                  }
+                />
               </div>
             </section>
 
@@ -719,16 +802,22 @@ export function Products() {
                         <Input
                           type="file"
                           accept="image/*"
-                          disabled={mode === "view"}
+                          disabled={mode === "view" || uploadingVariantMediaIndex === mediaIndex}
                           onChange={(e) => handleVariantMediaFileChange(mediaIndex, "url", e.target.files?.[0] || null)}
                         />
+                        {uploadingVariantMediaIndex === mediaIndex ? (
+                          <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                            Uploading variant media...
+                          </p>
+                        ) : null}
                       </div>
                       <div>
                         <FieldLabel>Browse Variant Thumbnail</FieldLabel>
                         <Input
                           type="file"
                           accept="image/*"
-                          disabled={mode === "view"}
+                          disabled={mode === "view" || uploadingVariantMediaIndex === mediaIndex}
                           onChange={(e) =>
                             handleVariantMediaFileChange(mediaIndex, "thumbnailUrl", e.target.files?.[0] || null)
                           }
@@ -781,7 +870,7 @@ export function Products() {
               </div>
               <p className="mt-4 text-sm text-[#5a6169]">
                 Separate values with commas. Variants will be generated automatically from these choices using the price
-                and stock template above.
+                and stock template above. If you leave one side empty, admin will create a single default MODEL or STYLE for you.
               </p>
             </section>
 
@@ -804,6 +893,7 @@ export function Products() {
               <Button
                 className="h-12 w-full rounded-2xl bg-[#06141B] text-sm font-semibold text-white hover:bg-[#0a1f29]"
                 onClick={submit}
+                disabled={isUploadingGallery || uploadingVariantMediaIndex !== null}
               >
                 {mode === "create" ? "Create Product" : "Save Changes"}
               </Button>

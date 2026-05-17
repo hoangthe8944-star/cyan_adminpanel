@@ -3,6 +3,8 @@ import type {
   AdminBannerPayload,
   AdminCategory,
   AdminCategoryPayload,
+  AdminCollection,
+  AdminCollectionPayload,
   AdminDashboardResponse,
   AdminEditorial,
   AdminEditorialPayload,
@@ -150,6 +152,38 @@ export const adminApi = {
     request<AdminOrder>(`/api/admin/orders/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ orderStatus, paymentStatus }),
+    }),
+  updateOrderMomoCallback: (
+    id: string,
+    payload: {
+      paymentStatus: string;
+      resultCode?: number | null;
+      transId?: number | null;
+      message?: string | null;
+      payUrl?: string | null;
+      deeplink?: string | null;
+      qrCodeUrl?: string | null;
+    }
+  ) =>
+    request<AdminOrder>(`/api/admin/orders/${id}/momo-callback`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  collections: () => request<AdminCollection[]>("/api/admin/collections"),
+  createCollection: (payload: AdminCollectionPayload) =>
+    request<AdminCollection>("/api/admin/collections", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateCollection: (id: string, payload: AdminCollectionPayload) =>
+    request<AdminCollection>(`/api/admin/collections/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteCollection: (id: string) =>
+    request<void>(`/api/admin/collections/${id}`, {
+      method: "DELETE",
     }),
 
   banners: () => request<AdminBanner[]>("/api/admin/banners"),

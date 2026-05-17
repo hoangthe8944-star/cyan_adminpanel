@@ -11,13 +11,38 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { adminApi, formatCurrency } from "../lib/api";
 import type { AdminOrder } from "../lib/types";
 
+function formatAddress(address?: AdminOrder["shippingAddress"] | AdminOrder["billingAddress"]) {
+  if (!address) {
+    return "-";
+  }
+
+  return [
+    address.line1,
+    address.line2,
+    address.ward,
+    address.district,
+    address.city,
+    address.country,
+    address.postalCode,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function Orders() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [momoOpen, setMomoOpen] = useState(false);
   const [orderStatus, setOrderStatus] = useState("PENDING");
   const [paymentStatus, setPaymentStatus] = useState("UNPAID");
+  const [momoResultCode, setMomoResultCode] = useState("");
+  const [momoTransId, setMomoTransId] = useState("");
+  const [momoMessage, setMomoMessage] = useState("");
+  const [momoPayUrl, setMomoPayUrl] = useState("");
+  const [momoDeeplink, setMomoDeeplink] = useState("");
+  const [momoQrCodeUrl, setMomoQrCodeUrl] = useState("");
   const [error, setError] = useState("");
 
   const loadOrders = () => {
@@ -55,6 +80,18 @@ export function Orders() {
     setStatusOpen(true);
   };
 
+  const openMomoEditor = (order: AdminOrder) => {
+    setSelectedOrder(order);
+    setPaymentStatus(order.paymentStatus);
+    setMomoResultCode(order.momoPayment?.resultCode?.toString() || "");
+    setMomoTransId(order.momoPayment?.transId?.toString() || "");
+    setMomoMessage(order.momoPayment?.message || "");
+    setMomoPayUrl(order.momoPayment?.payUrl || "");
+    setMomoDeeplink(order.momoPayment?.deeplink || "");
+    setMomoQrCodeUrl(order.momoPayment?.qrCodeUrl || "");
+    setMomoOpen(true);
+  };
+
   const saveStatus = async () => {
     if (!selectedOrder) {
       return;
@@ -65,6 +102,28 @@ export function Orders() {
       loadOrders();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update order status");
+    }
+  };
+
+  const saveMomoCallback = async () => {
+    if (!selectedOrder) {
+      return;
+    }
+
+    try {
+      await adminApi.updateOrderMomoCallback(selectedOrder.id, {
+        paymentStatus,
+        resultCode: momoResultCode ? Number(momoResultCode) : null,
+        transId: momoTransId ? Number(momoTransId) : null,
+        message: momoMessage || null,
+        payUrl: momoPayUrl || null,
+        deeplink: momoDeeplink || null,
+        qrCodeUrl: momoQrCodeUrl || null,
+      });
+      setMomoOpen(false);
+      loadOrders();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update MoMo callback");
     }
   };
 
@@ -98,6 +157,7 @@ export function Orders() {
               <TableHead className="font-data">Order ID</TableHead>
               <TableHead className="font-data">Customer</TableHead>
               <TableHead className="font-data">Products</TableHead>
+              <TableHead className="font-data">Method</TableHead>
               <TableHead className="font-data">Total</TableHead>
               <TableHead className="font-data">Status</TableHead>
               <TableHead className="font-data">Payment</TableHead>
@@ -110,6 +170,7 @@ export function Orders() {
                 <TableCell className="font-data">{order.orderCode}</TableCell>
                 <TableCell className="font-data">{order.customer.fullName}</TableCell>
                 <TableCell className="font-data text-[#5a6169]">{order.items.map((item) => item.productName).join(", ")}</TableCell>
+                <TableCell className="font-data text-[#5a6169]">{order.paymentMethod}</TableCell>
                 <TableCell className="font-data text-[#A36B31]">{formatCurrency(order.totalAmount)}</TableCell>
                 <TableCell><Badge className="bg-[rgba(237,217,135,0.2)] text-[#A36B31] border-0 capitalize">{order.orderStatus}</Badge></TableCell>
                 <TableCell className="font-data text-[#5a6169]">{order.paymentStatus}</TableCell>
@@ -117,6 +178,9 @@ export function Orders() {
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => openDetail(order)}><Eye className="w-4 h-4" /></Button>
                     <Button variant="outline" size="sm" onClick={() => openStatusEditor(order)}><Pencil className="w-4 h-4" /></Button>
+                    {order.paymentMethod === "MOMO" ? (
+                      <Button variant="outline" size="sm" onClick={() => openMomoEditor(order)}>MoMo</Button>
+                    ) : null}
                   </div>
                 </TableCell>
               </TableRow>
@@ -133,21 +197,37 @@ export function Orders() {
               <p><strong>Order:</strong> {selectedOrder.orderCode}</p>
               <p><strong>Customer:</strong> {selectedOrder.customer.fullName} - {selectedOrder.customer.phoneNumber}</p>
               <p><strong>Email:</strong> {selectedOrder.customer.email || "-"}</p>
-              <p><strong>Shipping:</strong> {selectedOrder.shippingAddress.line1}, {selectedOrder.shippingAddress.city}, {selectedOrder.shippingAddress.country}</p>
+              <p><strong>Shipping:</strong> {formatAddress(selectedOrder.shippingAddress)}</p>
+              <p><strong>Billing:</strong> {formatAddress(selectedOrder.billingAddress || selectedOrder.shippingAddress)}</p>
               <p><strong>Payment Method:</strong> {selectedOrder.paymentMethod}</p>
               <p><strong>Order Status:</strong> {selectedOrder.orderStatus}</p>
               <p><strong>Payment Status:</strong> {selectedOrder.paymentStatus}</p>
+              <p><strong>Subtotal:</strong> {formatCurrency(selectedOrder.subtotal || 0)}</p>
+              <p><strong>Shipping Fee:</strong> {formatCurrency(selectedOrder.shippingFee || 0)}</p>
+              <p><strong>Discount:</strong> {formatCurrency(selectedOrder.discountAmount || 0)}</p>
+              <p><strong>Total:</strong> {formatCurrency(selectedOrder.totalAmount)}</p>
+              <p><strong>Currency:</strong> {selectedOrder.currency || "VND"}</p>
               <p><strong>Note:</strong> {selectedOrder.note || "-"}</p>
               <div>
                 <strong>Items:</strong>
                 <ul className="mt-2 space-y-1">
                   {selectedOrder.items.map((item) => (
                     <li key={`${item.productName}-${item.variantCode}`}>
-                      {item.productName} | {item.variantCode} | qty {item.quantity}
+                      {item.productName} | {item.variantCode} | qty {item.quantity} | {formatCurrency(item.lineTotal || 0)}
                     </li>
                   ))}
                 </ul>
               </div>
+              {selectedOrder.momoPayment ? (
+                <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-4">
+                  <p><strong>MoMo Result Code:</strong> {selectedOrder.momoPayment.resultCode ?? "-"}</p>
+                  <p><strong>MoMo Transaction:</strong> {selectedOrder.momoPayment.transId ?? "-"}</p>
+                  <p><strong>MoMo Message:</strong> {selectedOrder.momoPayment.message || "-"}</p>
+                  <p><strong>Pay URL:</strong> {selectedOrder.momoPayment.payUrl || "-"}</p>
+                  <p><strong>Deep Link:</strong> {selectedOrder.momoPayment.deeplink || "-"}</p>
+                  <p><strong>QR URL:</strong> {selectedOrder.momoPayment.qrCodeUrl || "-"}</p>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </DialogContent>
@@ -188,6 +268,54 @@ export function Orders() {
             </div>
             <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={saveStatus}>
               Save Status
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={momoOpen} onOpenChange={setMomoOpen}>
+        <DialogContent className="bg-white max-w-lg">
+          <DialogHeader><DialogTitle className="font-heading">Update MoMo Callback</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <span className="text-sm text-[#5a6169]">Payment Status</span>
+              <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UNPAID">UNPAID</SelectItem>
+                  <SelectItem value="PENDING">PENDING</SelectItem>
+                  <SelectItem value="PAID">PAID</SelectItem>
+                  <SelectItem value="REFUNDED">REFUNDED</SelectItem>
+                  <SelectItem value="FAILED">FAILED</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <span className="text-sm text-[#5a6169]">Result Code</span>
+              <input className="mt-1 w-full rounded-xl border border-[rgba(6,20,27,0.14)] px-4 py-2 text-sm" value={momoResultCode} onChange={(e) => setMomoResultCode(e.target.value)} />
+            </div>
+            <div>
+              <span className="text-sm text-[#5a6169]">Transaction ID</span>
+              <input className="mt-1 w-full rounded-xl border border-[rgba(6,20,27,0.14)] px-4 py-2 text-sm" value={momoTransId} onChange={(e) => setMomoTransId(e.target.value)} />
+            </div>
+            <div>
+              <span className="text-sm text-[#5a6169]">Message</span>
+              <input className="mt-1 w-full rounded-xl border border-[rgba(6,20,27,0.14)] px-4 py-2 text-sm" value={momoMessage} onChange={(e) => setMomoMessage(e.target.value)} />
+            </div>
+            <div>
+              <span className="text-sm text-[#5a6169]">Pay URL</span>
+              <input className="mt-1 w-full rounded-xl border border-[rgba(6,20,27,0.14)] px-4 py-2 text-sm" value={momoPayUrl} onChange={(e) => setMomoPayUrl(e.target.value)} />
+            </div>
+            <div>
+              <span className="text-sm text-[#5a6169]">Deep Link</span>
+              <input className="mt-1 w-full rounded-xl border border-[rgba(6,20,27,0.14)] px-4 py-2 text-sm" value={momoDeeplink} onChange={(e) => setMomoDeeplink(e.target.value)} />
+            </div>
+            <div>
+              <span className="text-sm text-[#5a6169]">QR Code URL</span>
+              <input className="mt-1 w-full rounded-xl border border-[rgba(6,20,27,0.14)] px-4 py-2 text-sm" value={momoQrCodeUrl} onChange={(e) => setMomoQrCodeUrl(e.target.value)} />
+            </div>
+            <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={saveMomoCallback}>
+              Save MoMo Update
             </Button>
           </div>
         </DialogContent>

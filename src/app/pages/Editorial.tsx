@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -10,7 +10,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
-import { adminApi, formatJsonField, parseJsonField, resolveImage } from "../lib/api";
+import { adminApi, resolveImage } from "../lib/api";
 import { buildAutoSlug } from "../lib/slug";
 import type { AdminEditorial, AdminEditorialPayload, EditorialSection } from "../lib/types";
 
@@ -23,14 +23,13 @@ function FieldLabel({ children, required = false }: { children: string; required
   );
 }
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("Failed to read selected file"));
-    reader.readAsDataURL(file);
-  });
-}
+const createEmptySection = (): EditorialSection => ({
+  heading: "",
+  subHeading: "",
+  content: "",
+  displayOrder: 0,
+  media: [],
+});
 
 const emptyEditorialForm: AdminEditorialPayload = {
   title: "",
@@ -55,9 +54,10 @@ export function Editorial() {
   const [open, setOpen] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<AdminEditorial | null>(null);
   const [form, setForm] = useState<AdminEditorialPayload>(emptyEditorialForm);
-  const [sectionsJson, setSectionsJson] = useState("[]");
   const [topicsText, setTopicsText] = useState("");
   const [error, setError] = useState("");
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [uploadingSectionMediaKey, setUploadingSectionMediaKey] = useState<string | null>(null);
 
   const loadEditorials = () => {
     adminApi.editorials().then(setArticles).catch((err: Error) => setError(err.message));
@@ -72,7 +72,6 @@ export function Editorial() {
     setSelectedArticle(null);
     setForm(emptyEditorialForm);
     setTopicsText("");
-    setSectionsJson("[]");
     setError("");
     setOpen(true);
   };
@@ -92,7 +91,6 @@ export function Editorial() {
       sections: article.sections,
     });
     setTopicsText(article.topics.join(", "));
-    setSectionsJson(formatJsonField(article.sections));
     setError("");
     setOpen(true);
   };
@@ -103,7 +101,11 @@ export function Editorial() {
       const payload: AdminEditorialPayload = {
         ...form,
         topics: topicsText.split(",").map((item) => item.trim()).filter(Boolean),
-        sections: parseJsonField<EditorialSection[]>(sectionsJson, []),
+        sections: form.sections.map((section, index) => ({
+          ...section,
+          displayOrder: section.displayOrder || index,
+          media: section.media.filter((item) => item.url.trim()),
+        })),
         publishedAt: form.publishedAt || null,
       };
       if (mode === "create") {
@@ -132,18 +134,97 @@ export function Editorial() {
       return;
     }
 
+    setIsUploadingCover(true);
+    setError("");
+
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const uploaded = await adminApi.uploadFile(file, "editorials");
       setForm((prev) => ({
         ...prev,
         coverMedia: {
           ...(prev.coverMedia || emptyEditorialForm.coverMedia!),
           mediaType: "IMAGE",
-          [field]: dataUrl,
+          [field]: uploaded.url,
         },
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to read image file");
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setIsUploadingCover(false);
+    }
+  };
+
+  const updateSection = (sectionIndex: number, patch: Partial<EditorialSection>) => {
+    setForm((prev) => ({
+      ...prev,
+      sections: prev.sections.map((section, index) =>
+        index === sectionIndex ? { ...section, ...patch } : section
+      ),
+    }));
+  };
+
+  const addSection = () => {
+    setForm((prev) => ({
+      ...prev,
+      sections: [...prev.sections, { ...createEmptySection(), displayOrder: prev.sections.length }],
+    }));
+  };
+
+  const removeSection = (sectionIndex: number) => {
+    setForm((prev) => ({
+      ...prev,
+      sections: prev.sections.filter((_, index) => index !== sectionIndex),
+    }));
+  };
+
+  const addSectionMedia = (sectionIndex: number) => {
+    updateSection(sectionIndex, {
+      media: [
+        ...(form.sections[sectionIndex]?.media || []),
+        { mediaType: "IMAGE", url: "", thumbnailUrl: "", altText: "" },
+      ],
+    });
+  };
+
+  const updateSectionMedia = (
+    sectionIndex: number,
+    mediaIndex: number,
+    field: "url" | "thumbnailUrl" | "altText",
+    value: string
+  ) => {
+    const nextMedia = (form.sections[sectionIndex]?.media || []).map((media, index) =>
+      index === mediaIndex ? { ...media, [field]: value } : media
+    );
+    updateSection(sectionIndex, { media: nextMedia });
+  };
+
+  const removeSectionMedia = (sectionIndex: number, mediaIndex: number) => {
+    updateSection(sectionIndex, {
+      media: (form.sections[sectionIndex]?.media || []).filter((_, index) => index !== mediaIndex),
+    });
+  };
+
+  const handleSectionMediaUpload = async (
+    sectionIndex: number,
+    mediaIndex: number,
+    field: "url" | "thumbnailUrl",
+    file: File | null
+  ) => {
+    if (!file) {
+      return;
+    }
+
+    const uploadKey = `${sectionIndex}-${mediaIndex}-${field}`;
+    setUploadingSectionMediaKey(uploadKey);
+    setError("");
+
+    try {
+      const uploaded = await adminApi.uploadFile(file, "editorials");
+      updateSectionMedia(sectionIndex, mediaIndex, field, uploaded.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setUploadingSectionMediaKey(null);
     }
   };
 
@@ -240,20 +321,194 @@ export function Editorial() {
                 )}
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div><FieldLabel>Browse Cover Image</FieldLabel><Input type="file" accept="image/*" disabled={mode === "view"} onChange={(e) => handleCoverFileChange("url", e.target.files?.[0] || null)} /></div>
-                <div><FieldLabel>Browse Thumbnail</FieldLabel><Input type="file" accept="image/*" disabled={mode === "view"} onChange={(e) => handleCoverFileChange("thumbnailUrl", e.target.files?.[0] || null)} /></div>
+                <div>
+                  <FieldLabel>Browse Cover Image</FieldLabel>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={mode === "view" || isUploadingCover}
+                    onChange={(e) => handleCoverFileChange("url", e.target.files?.[0] || null)}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Browse Thumbnail</FieldLabel>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={mode === "view" || isUploadingCover}
+                    onChange={(e) => handleCoverFileChange("thumbnailUrl", e.target.files?.[0] || null)}
+                  />
+                </div>
               </div>
+              {isUploadingCover ? (
+                <p className="mt-3 flex items-center gap-2 text-sm text-[#5a6169]">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Uploading cover media...
+                </p>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div><FieldLabel>Publish Time</FieldLabel><Input type="datetime-local" value={form.publishedAt || ""} disabled={mode === "view"} onChange={(e) => setForm({ ...form, publishedAt: e.target.value })} /></div>
-              <div />
+              <div>
+                <FieldLabel>Cover Alt Text</FieldLabel>
+                <Input
+                  value={form.coverMedia?.altText || ""}
+                  disabled={mode === "view"}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      coverMedia: {
+                        ...(form.coverMedia || emptyEditorialForm.coverMedia!),
+                        altText: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </div>
             </div>
-            <div>
-              <FieldLabel>Sections JSON</FieldLabel>
-              <Textarea className="min-h-48 font-mono text-xs" value={sectionsJson} disabled={mode === "view"} onChange={(e) => setSectionsJson(e.target.value)} />
+            <div className="rounded-2xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <FieldLabel>Sections</FieldLabel>
+                  <p className="mt-1 text-sm text-[#5a6169]">Build editorial blocks directly from the backend section schema.</p>
+                </div>
+                {mode !== "view" ? (
+                  <Button variant="outline" onClick={addSection}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Section
+                  </Button>
+                ) : null}
+              </div>
+
+              <div className="space-y-4">
+                {form.sections.length ? (
+                  form.sections.map((section, sectionIndex) => (
+                    <div key={`${section.heading}-${sectionIndex}`} className="rounded-2xl border border-[rgba(6,20,27,0.08)] bg-white p-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                          <FieldLabel required>Heading</FieldLabel>
+                          <Input
+                            value={section.heading}
+                            disabled={mode === "view"}
+                            onChange={(e) => updateSection(sectionIndex, { heading: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>Sub Heading</FieldLabel>
+                          <Input
+                            value={section.subHeading || ""}
+                            disabled={mode === "view"}
+                            onChange={(e) => updateSection(sectionIndex, { subHeading: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>Display Order</FieldLabel>
+                          <Input
+                            type="number"
+                            value={section.displayOrder}
+                            disabled={mode === "view"}
+                            onChange={(e) => updateSection(sectionIndex, { displayOrder: Number(e.target.value) })}
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <FieldLabel>Content</FieldLabel>
+                        <Textarea
+                          className="min-h-28"
+                          value={section.content || ""}
+                          disabled={mode === "view"}
+                          onChange={(e) => updateSection(sectionIndex, { content: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="mt-4 space-y-4">
+                        {(section.media || []).map((media, mediaIndex) => {
+                          const uploadKey = `${sectionIndex}-${mediaIndex}`;
+                          return (
+                            <div
+                              key={`${uploadKey}-${media.url || "new"}`}
+                              className="grid grid-cols-1 gap-4 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-4 md:grid-cols-[120px_1fr_1fr_auto]"
+                            >
+                              <div className="overflow-hidden rounded-xl bg-[rgba(6,20,27,0.06)]">
+                                {media.url ? (
+                                  <img src={resolveImage(media)} alt={media.altText || `section-${sectionIndex + 1}`} className="h-24 w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-24 items-center justify-center text-sm text-[#7b858e]">No image</div>
+                                )}
+                              </div>
+                              <div>
+                                <FieldLabel>Image</FieldLabel>
+                                <Input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={mode === "view" || uploadingSectionMediaKey === `${uploadKey}-url`}
+                                  onChange={(e) =>
+                                    handleSectionMediaUpload(sectionIndex, mediaIndex, "url", e.target.files?.[0] || null)
+                                  }
+                                />
+                                {uploadingSectionMediaKey === `${uploadKey}-url` ? (
+                                  <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                                    Uploading image...
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="space-y-4">
+                                <div>
+                                  <FieldLabel>Thumbnail</FieldLabel>
+                                  <Input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={mode === "view" || uploadingSectionMediaKey === `${uploadKey}-thumbnailUrl`}
+                                    onChange={(e) =>
+                                      handleSectionMediaUpload(sectionIndex, mediaIndex, "thumbnailUrl", e.target.files?.[0] || null)
+                                    }
+                                  />
+                                </div>
+                                <div>
+                                  <FieldLabel>Alt Text</FieldLabel>
+                                  <Input
+                                    value={media.altText || ""}
+                                    disabled={mode === "view"}
+                                    onChange={(e) => updateSectionMedia(sectionIndex, mediaIndex, "altText", e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              {mode !== "view" ? (
+                                <div className="flex items-end">
+                                  <Button variant="ghost" size="sm" onClick={() => removeSectionMedia(sectionIndex, mediaIndex)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {mode !== "view" ? (
+                        <div className="mt-4 flex gap-3">
+                          <Button variant="outline" onClick={() => addSectionMedia(sectionIndex)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Media
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => removeSection(sectionIndex)}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Remove Section
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-[rgba(6,20,27,0.12)] bg-white px-4 py-10 text-center text-sm text-[#7b858e]">
+                    No sections yet
+                  </div>
+                )}
+              </div>
             </div>
             {mode !== "view" ? (
-              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit}>
+              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit} disabled={isUploadingCover || uploadingSectionMediaKey !== null}>
                 {mode === "create" ? "Create Editorial" : "Save Changes"}
               </Button>
             ) : null}
