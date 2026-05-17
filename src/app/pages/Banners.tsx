@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 import { Badge } from "../components/ui/badge";
@@ -48,6 +48,8 @@ export function Banners() {
   const [mode, setMode] = useState<"create" | "edit" | "view">("create");
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
 
   const loadBanners = () => {
     adminApi.banners().then(setBanners).catch((err: Error) => setError(err.message));
@@ -90,6 +92,31 @@ export function Banners() {
       title: value,
       slug: buildAutoSlug(value),
     }));
+  };
+
+  const handleMediaFileChange = async (field: "url" | "thumbnailUrl", file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    const setUploading = field === "url" ? setIsUploadingMedia : setIsUploadingThumbnail;
+    setUploading(true);
+    setError("");
+
+    try {
+      const uploaded = await adminApi.uploadFile(file, "banners");
+      setForm((prev) => ({
+        ...prev,
+        media: {
+          ...prev.media,
+          [field]: uploaded.url,
+        },
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const submit = async () => {
@@ -238,22 +265,34 @@ export function Banners() {
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <FieldLabel required>{form.media.mediaType === "MP4" ? "Cloudinary Video URL" : "Cloudinary Image URL"}</FieldLabel>
+                  <FieldLabel required>{form.media.mediaType === "MP4" ? "Browse Video" : "Browse Image"}</FieldLabel>
                   <Input
-                    value={form.media.url}
+                    type="file"
+                    accept={form.media.mediaType === "MP4" ? "video/mp4" : "image/*"}
                     disabled={mode === "view"}
-                    onChange={(e) => setForm({ ...form, media: { ...form.media, url: e.target.value } })}
-                    placeholder={form.media.mediaType === "MP4" ? "https://res.cloudinary.com/.../video/upload/..." : "https://res.cloudinary.com/.../image/upload/..."}
+                    onChange={(e) => handleMediaFileChange("url", e.target.files?.[0] || null)}
                   />
+                  {isUploadingMedia ? (
+                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Uploading media...
+                    </p>
+                  ) : null}
                 </div>
                 <div>
-                  <FieldLabel>Cloudinary Thumbnail URL</FieldLabel>
+                  <FieldLabel>Browse Thumbnail</FieldLabel>
                   <Input
-                    value={form.media.thumbnailUrl || ""}
+                    type="file"
+                    accept="image/*"
                     disabled={mode === "view"}
-                    onChange={(e) => setForm({ ...form, media: { ...form.media, thumbnailUrl: e.target.value } })}
-                    placeholder="https://res.cloudinary.com/.../image/upload/..."
+                    onChange={(e) => handleMediaFileChange("thumbnailUrl", e.target.files?.[0] || null)}
                   />
+                  {isUploadingThumbnail ? (
+                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Uploading thumbnail...
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -293,7 +332,7 @@ export function Banners() {
               Active banner
             </label>
             {mode !== "view" ? (
-              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit} disabled={!form.media.url}>
+              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit} disabled={isUploadingMedia || isUploadingThumbnail || !form.media.url}>
                 {mode === "create" ? "Create Banner" : "Save Changes"}
               </Button>
             ) : null}

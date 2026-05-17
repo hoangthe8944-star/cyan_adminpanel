@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { Eye, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pencil, Plus, Search, Trash2 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -193,6 +193,8 @@ export function Products() {
   const [compareAtPriceText, setCompareAtPriceText] = useState("");
   const [costPriceText, setCostPriceText] = useState("");
   const [error, setError] = useState("");
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
+  const [uploadingVariantMediaIndex, setUploadingVariantMediaIndex] = useState<number | null>(null);
 
   const loadData = () => {
     adminApi.products().then(setProducts).catch((err: Error) => setError(err.message));
@@ -296,6 +298,54 @@ export function Products() {
       name: value,
       slug: buildAutoSlug(value),
     }));
+  };
+
+  const handleMediaFileChange = async (field: "url" | "thumbnailUrl", file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingGallery(true);
+    setError("");
+
+    try {
+      const uploaded = await adminApi.uploadFile(file, "products");
+      setForm((prev) => ({
+        ...prev,
+        gallery: [{ ...(prev.gallery[0] || createEmptyMedia()), [field]: uploaded.url }],
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setIsUploadingGallery(false);
+    }
+  };
+
+  const handleVariantMediaFileChange = async (
+    mediaIndex: number,
+    field: "url" | "thumbnailUrl",
+    file: File | null
+  ) => {
+    if (!file) {
+      return;
+    }
+
+    setUploadingVariantMediaIndex(mediaIndex);
+    setError("");
+
+    try {
+      const uploaded = await adminApi.uploadFile(file, "products");
+      const currentMedia = primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()];
+      updatePrimaryVariant({
+        media: currentMedia.map((item, index) =>
+          index === mediaIndex ? { ...item, [field]: uploaded.url } : item
+        ),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setUploadingVariantMediaIndex(null);
+    }
   };
 
   const submit = async () => {
@@ -588,31 +638,27 @@ export function Products() {
                   )}
                 </div>
                 <div>
-                  <FieldLabel required>Cloudinary Main Image URL</FieldLabel>
+                  <FieldLabel required>Browse Main Image</FieldLabel>
                   <Input
-                    value={primaryMedia.url}
+                    type="file"
+                    accept="image/*"
                     disabled={mode === "view"}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        gallery: [{ ...(prev.gallery[0] || createEmptyMedia()), url: e.target.value }],
-                      }))
-                    }
-                    placeholder="https://res.cloudinary.com/.../image/upload/..."
+                    onChange={(e) => handleMediaFileChange("url", e.target.files?.[0] || null)}
                   />
+                  {isUploadingGallery ? (
+                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Uploading main image...
+                    </p>
+                  ) : null}
                 </div>
                 <div>
-                  <FieldLabel>Cloudinary Thumbnail URL</FieldLabel>
+                  <FieldLabel>Browse Thumbnail</FieldLabel>
                   <Input
-                    value={primaryMedia.thumbnailUrl || ""}
+                    type="file"
+                    accept="image/*"
                     disabled={mode === "view"}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        gallery: [{ ...(prev.gallery[0] || createEmptyMedia()), thumbnailUrl: e.target.value }],
-                      }))
-                    }
-                    placeholder="https://res.cloudinary.com/.../image/upload/..."
+                    onChange={(e) => handleMediaFileChange("thumbnailUrl", e.target.files?.[0] || null)}
                   />
                 </div>
               </div>
@@ -752,33 +798,29 @@ export function Products() {
                         )}
                       </div>
                       <div>
-                        <FieldLabel>Cloudinary Variant Image URL</FieldLabel>
+                        <FieldLabel>Browse Variant Image</FieldLabel>
                         <Input
-                          value={media.url}
-                          disabled={mode === "view"}
-                          onChange={(e) =>
-                            updatePrimaryVariant({
-                              media: (primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()]).map(
-                                (item, index) => (index === mediaIndex ? { ...item, url: e.target.value } : item)
-                              ),
-                            })
-                          }
-                          placeholder="https://res.cloudinary.com/.../image/upload/..."
+                          type="file"
+                          accept="image/*"
+                          disabled={mode === "view" || uploadingVariantMediaIndex === mediaIndex}
+                          onChange={(e) => handleVariantMediaFileChange(mediaIndex, "url", e.target.files?.[0] || null)}
                         />
+                        {uploadingVariantMediaIndex === mediaIndex ? (
+                          <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                            Uploading variant media...
+                          </p>
+                        ) : null}
                       </div>
                       <div>
-                        <FieldLabel>Cloudinary Variant Thumbnail URL</FieldLabel>
+                        <FieldLabel>Browse Variant Thumbnail</FieldLabel>
                         <Input
-                          value={media.thumbnailUrl || ""}
-                          disabled={mode === "view"}
+                          type="file"
+                          accept="image/*"
+                          disabled={mode === "view" || uploadingVariantMediaIndex === mediaIndex}
                           onChange={(e) =>
-                            updatePrimaryVariant({
-                              media: (primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()]).map(
-                                (item, index) => (index === mediaIndex ? { ...item, thumbnailUrl: e.target.value } : item)
-                              ),
-                            })
+                            handleVariantMediaFileChange(mediaIndex, "thumbnailUrl", e.target.files?.[0] || null)
                           }
-                          placeholder="https://res.cloudinary.com/.../image/upload/..."
                         />
                       </div>
                       {mode !== "view" ? (
@@ -851,6 +893,7 @@ export function Products() {
               <Button
                 className="h-12 w-full rounded-2xl bg-[#06141B] text-sm font-semibold text-white hover:bg-[#0a1f29]"
                 onClick={submit}
+                disabled={isUploadingGallery || uploadingVariantMediaIndex !== null}
               >
                 {mode === "create" ? "Create Product" : "Save Changes"}
               </Button>

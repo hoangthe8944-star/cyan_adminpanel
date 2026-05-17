@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -56,6 +56,8 @@ export function Editorial() {
   const [form, setForm] = useState<AdminEditorialPayload>(emptyEditorialForm);
   const [topicsText, setTopicsText] = useState("");
   const [error, setError] = useState("");
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [uploadingSectionMediaKey, setUploadingSectionMediaKey] = useState<string | null>(null);
 
   const loadEditorials = () => {
     adminApi.editorials().then(setArticles).catch((err: Error) => setError(err.message));
@@ -127,6 +129,31 @@ export function Editorial() {
     }));
   };
 
+  const handleCoverFileChange = async (field: "url" | "thumbnailUrl", file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingCover(true);
+    setError("");
+
+    try {
+      const uploaded = await adminApi.uploadFile(file, "editorials");
+      setForm((prev) => ({
+        ...prev,
+        coverMedia: {
+          ...(prev.coverMedia || emptyEditorialForm.coverMedia!),
+          mediaType: "IMAGE",
+          [field]: uploaded.url,
+        },
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setIsUploadingCover(false);
+    }
+  };
+
   const updateSection = (sectionIndex: number, patch: Partial<EditorialSection>) => {
     setForm((prev) => ({
       ...prev,
@@ -175,6 +202,30 @@ export function Editorial() {
     updateSection(sectionIndex, {
       media: (form.sections[sectionIndex]?.media || []).filter((_, index) => index !== mediaIndex),
     });
+  };
+
+  const handleSectionMediaUpload = async (
+    sectionIndex: number,
+    mediaIndex: number,
+    field: "url" | "thumbnailUrl",
+    file: File | null
+  ) => {
+    if (!file) {
+      return;
+    }
+
+    const uploadKey = `${sectionIndex}-${mediaIndex}-${field}`;
+    setUploadingSectionMediaKey(uploadKey);
+    setError("");
+
+    try {
+      const uploaded = await adminApi.uploadFile(file, "editorials");
+      updateSectionMedia(sectionIndex, mediaIndex, field, uploaded.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload selected file");
+    } finally {
+      setUploadingSectionMediaKey(null);
+    }
   };
 
   const remove = async (article: AdminEditorial) => {
@@ -271,42 +322,30 @@ export function Editorial() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <FieldLabel>Cloudinary Cover URL</FieldLabel>
+                  <FieldLabel>Browse Cover Image</FieldLabel>
                   <Input
-                    value={form.coverMedia?.url || ""}
-                    disabled={mode === "view"}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        coverMedia: {
-                          ...(form.coverMedia || emptyEditorialForm.coverMedia!),
-                          mediaType: "IMAGE",
-                          url: e.target.value,
-                        },
-                      })
-                    }
-                    placeholder="https://res.cloudinary.com/.../image/upload/..."
+                    type="file"
+                    accept="image/*"
+                    disabled={mode === "view" || isUploadingCover}
+                    onChange={(e) => handleCoverFileChange("url", e.target.files?.[0] || null)}
                   />
                 </div>
                 <div>
-                  <FieldLabel>Cloudinary Thumbnail URL</FieldLabel>
+                  <FieldLabel>Browse Thumbnail</FieldLabel>
                   <Input
-                    value={form.coverMedia?.thumbnailUrl || ""}
-                    disabled={mode === "view"}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        coverMedia: {
-                          ...(form.coverMedia || emptyEditorialForm.coverMedia!),
-                          mediaType: "IMAGE",
-                          thumbnailUrl: e.target.value,
-                        },
-                      })
-                    }
-                    placeholder="https://res.cloudinary.com/.../image/upload/..."
+                    type="file"
+                    accept="image/*"
+                    disabled={mode === "view" || isUploadingCover}
+                    onChange={(e) => handleCoverFileChange("thumbnailUrl", e.target.files?.[0] || null)}
                   />
                 </div>
               </div>
+              {isUploadingCover ? (
+                <p className="mt-3 flex items-center gap-2 text-sm text-[#5a6169]">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Uploading cover media...
+                </p>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div><FieldLabel>Publish Time</FieldLabel><Input type="datetime-local" value={form.publishedAt || ""} disabled={mode === "view"} onChange={(e) => setForm({ ...form, publishedAt: e.target.value })} /></div>
@@ -398,24 +437,32 @@ export function Editorial() {
                                 )}
                               </div>
                               <div>
-                                <FieldLabel>Cloudinary Image URL</FieldLabel>
+                                <FieldLabel>Image</FieldLabel>
                                 <Input
-                                  value={media.url}
-                                  disabled={mode === "view"}
-                                  onChange={(e) => updateSectionMedia(sectionIndex, mediaIndex, "url", e.target.value)}
-                                  placeholder="https://res.cloudinary.com/.../image/upload/..."
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={mode === "view" || uploadingSectionMediaKey === `${uploadKey}-url`}
+                                  onChange={(e) =>
+                                    handleSectionMediaUpload(sectionIndex, mediaIndex, "url", e.target.files?.[0] || null)
+                                  }
                                 />
+                                {uploadingSectionMediaKey === `${uploadKey}-url` ? (
+                                  <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
+                                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                                    Uploading image...
+                                  </p>
+                                ) : null}
                               </div>
                               <div className="space-y-4">
                                 <div>
-                                  <FieldLabel>Cloudinary Thumbnail URL</FieldLabel>
+                                  <FieldLabel>Thumbnail</FieldLabel>
                                   <Input
-                                    value={media.thumbnailUrl || ""}
-                                    disabled={mode === "view"}
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={mode === "view" || uploadingSectionMediaKey === `${uploadKey}-thumbnailUrl`}
                                     onChange={(e) =>
-                                      updateSectionMedia(sectionIndex, mediaIndex, "thumbnailUrl", e.target.value)
+                                      handleSectionMediaUpload(sectionIndex, mediaIndex, "thumbnailUrl", e.target.files?.[0] || null)
                                     }
-                                    placeholder="https://res.cloudinary.com/.../image/upload/..."
                                   />
                                 </div>
                                 <div>
@@ -461,7 +508,7 @@ export function Editorial() {
               </div>
             </div>
             {mode !== "view" ? (
-              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit}>
+              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit} disabled={isUploadingCover || uploadingSectionMediaKey !== null}>
                 {mode === "create" ? "Create Editorial" : "Save Changes"}
               </Button>
             ) : null}

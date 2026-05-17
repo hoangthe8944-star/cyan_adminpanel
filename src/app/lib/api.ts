@@ -11,6 +11,7 @@ import type {
   AdminOrder,
   AdminProduct,
   AdminProductPayload,
+  UploadResponse,
 } from "./types";
 
 const LOCAL_API_BASE_URL = import.meta.env.VITE_LOCAL_API_BASE_URL ?? "http://localhost:8081";
@@ -57,6 +58,7 @@ function normalizeAssetUrl(value?: string | null) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const baseUrls = [...new Set(getApiBaseUrls())];
   let lastNetworkError: unknown = null;
 
@@ -64,7 +66,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const response = await fetch(`${baseUrl}${path}`, {
         headers: {
-          "Content-Type": "application/json",
+          ...(isFormData ? {} : { "Content-Type": "application/json" }),
           ...(init?.headers ?? {}),
         },
         ...init,
@@ -210,6 +212,16 @@ export const adminApi = {
     request<void>(`/api/admin/banners/${id}`, {
       method: "DELETE",
     }),
+  uploadFile: (file: File, folder = "general") => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", folder);
+
+    return request<UploadResponse>("/api/admin/uploads", {
+      method: "POST",
+      body: formData,
+    });
+  },
 
   editorials: () => request<AdminEditorial[]>("/api/admin/editorials"),
   createEditorial: (payload: AdminEditorialPayload) =>
