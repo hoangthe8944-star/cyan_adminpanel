@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { Eye, Grid3x3, List, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, Grid3x3, List, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -46,8 +46,6 @@ export function Categories() {
   const [selectedCategory, setSelectedCategory] = useState<AdminCategory | null>(null);
   const [form, setForm] = useState<AdminCategoryPayload>(emptyCategoryForm);
   const [error, setError] = useState("");
-  const [isUploadingCover, setIsUploadingCover] = useState(false);
-  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
 
   const rootCategories = useMemo(() => categories.filter((item) => item.level === 1), [categories]);
 
@@ -118,32 +116,6 @@ export function Categories() {
       name: value,
       slug: buildAutoSlug(value),
     }));
-  };
-
-  const handleCoverFileChange = async (field: "url" | "thumbnailUrl", file: File | null) => {
-    if (!file) {
-      return;
-    }
-
-    const setUploading = field === "url" ? setIsUploadingCover : setIsUploadingThumbnail;
-    setUploading(true);
-    setError("");
-
-    try {
-      const uploaded = await adminApi.uploadFile(file, "categories");
-      setForm((prev) => ({
-        ...prev,
-        coverMedia: {
-          ...(prev.coverMedia || emptyCategoryForm.coverMedia!),
-          mediaType: "IMAGE",
-          [field]: uploaded.url,
-        },
-      }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload selected file");
-    } finally {
-      setUploading(false);
-    }
   };
 
   const remove = async (category: AdminCategory) => {
@@ -312,34 +284,40 @@ export function Categories() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <FieldLabel>Browse Cover Image</FieldLabel>
+                <FieldLabel>Cloudinary Cover URL</FieldLabel>
                 <Input
-                  type="file"
-                  accept="image/*"
-                  disabled={mode === "view" || isUploadingCover}
-                  onChange={(e) => handleCoverFileChange("url", e.target.files?.[0] || null)}
+                  value={form.coverMedia?.url || ""}
+                  disabled={mode === "view"}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      coverMedia: {
+                        ...(form.coverMedia || emptyCategoryForm.coverMedia!),
+                        mediaType: "IMAGE",
+                        url: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="https://res.cloudinary.com/.../image/upload/..."
                 />
-                {isUploadingCover ? (
-                  <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Uploading cover...
-                  </p>
-                ) : null}
               </div>
               <div>
-                <FieldLabel>Browse Thumbnail</FieldLabel>
+                <FieldLabel>Cloudinary Thumbnail URL</FieldLabel>
                 <Input
-                  type="file"
-                  accept="image/*"
-                  disabled={mode === "view" || isUploadingThumbnail}
-                  onChange={(e) => handleCoverFileChange("thumbnailUrl", e.target.files?.[0] || null)}
+                  value={form.coverMedia?.thumbnailUrl || ""}
+                  disabled={mode === "view"}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      coverMedia: {
+                        ...(form.coverMedia || emptyCategoryForm.coverMedia!),
+                        mediaType: "IMAGE",
+                        thumbnailUrl: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="https://res.cloudinary.com/.../image/upload/..."
                 />
-                {isUploadingThumbnail ? (
-                  <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Uploading thumbnail...
-                  </p>
-                ) : null}
               </div>
             </div>
             <div>
@@ -362,7 +340,6 @@ export function Categories() {
               <Button
                 className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white"
                 onClick={submit}
-                disabled={isUploadingCover || isUploadingThumbnail}
               >
                 {mode === "create" ? "Create Category" : "Save Changes"}
               </Button>

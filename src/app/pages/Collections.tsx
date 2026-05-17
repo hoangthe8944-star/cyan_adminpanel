@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { Eye, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -55,8 +55,6 @@ export function Collections() {
   const [mode, setMode] = useState<"create" | "edit" | "view">("create");
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
-  const [isUploadingCover, setIsUploadingCover] = useState(false);
-  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
 
   const loadData = () => {
     adminApi.collections().then(setCollections).catch((err: Error) => setError(err.message));
@@ -115,32 +113,6 @@ export function Collections() {
       name: value,
       slug: buildAutoSlug(value),
     }));
-  };
-
-  const handleCoverFileChange = async (field: "url" | "thumbnailUrl", file: File | null) => {
-    if (!file) {
-      return;
-    }
-
-    const setUploading = field === "url" ? setIsUploadingCover : setIsUploadingThumbnail;
-    setUploading(true);
-    setError("");
-
-    try {
-      const uploaded = await adminApi.uploadFile(file, "collections");
-      setForm((prev) => ({
-        ...prev,
-        coverMedia: {
-          ...(prev.coverMedia || emptyCollectionForm.coverMedia!),
-          mediaType: "IMAGE",
-          [field]: uploaded.url,
-        },
-      }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload selected file");
-    } finally {
-      setUploading(false);
-    }
   };
 
   const submit = async () => {
@@ -283,24 +255,40 @@ export function Collections() {
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <FieldLabel>Browse Cover</FieldLabel>
-                  <Input type="file" accept="image/*" disabled={mode === "view" || isUploadingCover} onChange={(e) => handleCoverFileChange("url", e.target.files?.[0] || null)} />
-                  {isUploadingCover ? (
-                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                      Uploading cover...
-                    </p>
-                  ) : null}
+                  <FieldLabel>Cloudinary Cover URL</FieldLabel>
+                  <Input
+                    value={form.coverMedia?.url || ""}
+                    disabled={mode === "view"}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        coverMedia: {
+                          ...(form.coverMedia || emptyCollectionForm.coverMedia!),
+                          mediaType: "IMAGE",
+                          url: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="https://res.cloudinary.com/.../image/upload/..."
+                  />
                 </div>
                 <div>
-                  <FieldLabel>Browse Thumbnail</FieldLabel>
-                  <Input type="file" accept="image/*" disabled={mode === "view" || isUploadingThumbnail} onChange={(e) => handleCoverFileChange("thumbnailUrl", e.target.files?.[0] || null)} />
-                  {isUploadingThumbnail ? (
-                    <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                      Uploading thumbnail...
-                    </p>
-                  ) : null}
+                  <FieldLabel>Cloudinary Thumbnail URL</FieldLabel>
+                  <Input
+                    value={form.coverMedia?.thumbnailUrl || ""}
+                    disabled={mode === "view"}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        coverMedia: {
+                          ...(form.coverMedia || emptyCollectionForm.coverMedia!),
+                          mediaType: "IMAGE",
+                          thumbnailUrl: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="https://res.cloudinary.com/.../image/upload/..."
+                  />
                 </div>
               </div>
               <div className="mt-4">
@@ -392,7 +380,7 @@ export function Collections() {
             </div>
 
             {mode !== "view" ? (
-              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit} disabled={isUploadingCover || isUploadingThumbnail}>
+              <Button className="w-full bg-[#06141B] hover:bg-[#0a1f29] text-white" onClick={submit}>
                 {mode === "create" ? "Create Collection" : "Save Changes"}
               </Button>
             ) : null}

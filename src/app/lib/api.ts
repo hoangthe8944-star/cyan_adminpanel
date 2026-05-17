@@ -11,7 +11,6 @@ import type {
   AdminOrder,
   AdminProduct,
   AdminProductPayload,
-  UploadResponse,
 } from "./types";
 
 const LOCAL_API_BASE_URL = import.meta.env.VITE_LOCAL_API_BASE_URL ?? "http://localhost:8081";
@@ -57,17 +56,7 @@ function normalizeAssetUrl(value?: string | null) {
   }
 }
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("Failed to read selected file"));
-    reader.readAsDataURL(file);
-  });
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const isFormData = init?.body instanceof FormData;
   const baseUrls = [...new Set(getApiBaseUrls())];
   let lastNetworkError: unknown = null;
 
@@ -75,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const response = await fetch(`${baseUrl}${path}`, {
         headers: {
-          ...(isFormData ? {} : { "Content-Type": "application/json" }),
+          "Content-Type": "application/json",
           ...(init?.headers ?? {}),
         },
         ...init,
@@ -221,32 +210,6 @@ export const adminApi = {
     request<void>(`/api/admin/banners/${id}`, {
       method: "DELETE",
     }),
-  uploadFile: async (file: File, folder = "general") => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("folder", folder);
-
-    try {
-      return await request<UploadResponse>("/api/admin/uploads", {
-        method: "POST",
-        body: formData,
-      });
-    } catch (error) {
-      // This repo only ships the admin frontend, so local previews keep working
-      // even when no upload server is running during development.
-      if (error instanceof TypeError) {
-        const url = await readFileAsDataUrl(file);
-        return {
-          url,
-          filename: file.name,
-          contentType: file.type || "application/octet-stream",
-          size: file.size,
-        };
-      }
-
-      throw error;
-    }
-  },
 
   editorials: () => request<AdminEditorial[]>("/api/admin/editorials"),
   createEditorial: (payload: AdminEditorialPayload) =>

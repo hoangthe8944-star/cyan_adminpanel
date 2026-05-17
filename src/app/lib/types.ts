@@ -280,10 +280,4 @@ export interface AdminEditorialPayload {
   sections: EditorialSection[];
 }
 
-export interface UploadResponse {
-  url: string;
-  filename: string;
-  contentType: string;
-  size: number;
-}
 
