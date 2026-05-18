@@ -46,9 +46,17 @@ const emptyCollectionForm: AdminCollectionPayload = {
   },
 };
 
-function normalizeOptionalText(value?: string | null) {
+function normalizeOptionalTrimmedText(value?: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeOptionalDescription(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return /\S/.test(value) ? value : null;
 }
 
 function normalizePublishedAt(value?: string | null) {
@@ -171,8 +179,8 @@ export function Collections() {
         ? {
             mediaType: "IMAGE" as const,
             url: form.coverMedia.url.trim(),
-            thumbnailUrl: normalizeOptionalText(form.coverMedia.thumbnailUrl),
-            altText: normalizeOptionalText(form.coverMedia.altText),
+            thumbnailUrl: normalizeOptionalTrimmedText(form.coverMedia.thumbnailUrl),
+            altText: normalizeOptionalTrimmedText(form.coverMedia.altText),
           }
         : null;
 
@@ -180,13 +188,13 @@ export function Collections() {
         ...form,
         name: form.name.trim(),
         slug: form.slug.trim(),
-        summary: normalizeOptionalText(form.summary),
-        description: normalizeOptionalText(form.description),
+        summary: normalizeOptionalTrimmedText(form.summary),
+        description: normalizeOptionalDescription(form.description),
         coverMedia: normalizedCoverMedia,
         publishedAt: normalizePublishedAt(form.publishedAt),
         seo: {
-          title: normalizeOptionalText(form.seo?.title),
-          description: normalizeOptionalText(form.seo?.description),
+          title: normalizeOptionalTrimmedText(form.seo?.title),
+          description: normalizeOptionalDescription(form.seo?.description),
           keywords: keywordsText.split(",").map((item) => item.trim()).filter(Boolean),
         },
       };
