@@ -87,6 +87,14 @@ function parseVndInput(value: string) {
   return digits ? Number(digits) : 0;
 }
 
+function normalizeOptionalDescription(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return /\S/.test(value) ? value : "";
+}
+
 function buildOptionCode(label: string) {
   return buildAutoSlug(label)
     .replace(/_slug$/, "")
@@ -376,7 +384,8 @@ export function Products() {
       const payload: AdminProductPayload = {
         ...form,
         tags: tagsText.split(",").map((item) => item.trim()).filter(Boolean),
-        shortDescription: form.shortDescription?.trim() || "",
+        shortDescription: normalizeOptionalDescription(form.shortDescription),
+        description: normalizeOptionalDescription(form.description),
         categoryIds: Array.from(new Set([form.primaryCategoryId, ...form.categoryIds].filter(Boolean))),
         gallery,
         options,
