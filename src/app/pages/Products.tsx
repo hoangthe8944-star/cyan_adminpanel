@@ -95,6 +95,30 @@ function normalizeOptionalDescription(value?: string | null) {
   return /\S/.test(value) ? value : "";
 }
 
+function DescriptionField({
+  value,
+  mode,
+  minHeightClass,
+  onChange,
+}: {
+  value: string;
+  mode: "create" | "edit" | "view";
+  minHeightClass: string;
+  onChange: (value: string) => void;
+}) {
+  if (mode === "view") {
+    return (
+      <div
+        className={`w-full rounded-xl border border-[rgba(6,20,27,0.14)] bg-[rgba(6,20,27,0.04)] px-4 py-3 text-sm text-[#06141B] whitespace-pre-wrap break-words ${minHeightClass}`}
+      >
+        {value || ""}
+      </div>
+    );
+  }
+
+  return <Textarea className={minHeightClass} value={value} onChange={(e) => onChange(e.target.value)} />;
+}
+
 function buildOptionCode(label: string) {
   return buildAutoSlug(label)
     .replace(/_slug$/, "")
@@ -546,11 +570,11 @@ export function Products() {
               </div>
               <div className="mt-5">
                 <FieldLabel>Short Description</FieldLabel>
-                <Textarea
-                  className="min-h-24"
+                <DescriptionField
+                  minHeightClass="min-h-24"
+                  mode={mode}
                   value={form.shortDescription || ""}
-                  disabled={mode === "view"}
-                  onChange={(e) => setForm({ ...form, shortDescription: e.target.value })}
+                  onChange={(value) => setForm({ ...form, shortDescription: value })}
                 />
               </div>
             </section>
@@ -888,11 +912,11 @@ export function Products() {
               <div className="space-y-5">
                 <div>
                   <FieldLabel>Full Description</FieldLabel>
-                  <Textarea
-                    className="min-h-32"
+                  <DescriptionField
+                    minHeightClass="min-h-32"
+                    mode={mode}
                     value={form.description || ""}
-                    disabled={mode === "view"}
-                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    onChange={(value) => setForm({ ...form, description: value })}
                   />
                 </div>
               </div>
