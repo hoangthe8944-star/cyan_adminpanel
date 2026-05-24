@@ -285,7 +285,7 @@ export function Editorial() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-white max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[min(96vw,72rem)] max-w-none max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white">
           <DialogHeader>
             <DialogTitle className="font-heading">
               {mode === "create" ? "Create Editorial" : mode === "edit" ? "Edit Editorial" : "Editorial Detail"}

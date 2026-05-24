@@ -179,6 +179,18 @@ function buildVariantCode(baseCode: string, modelCode: string, styleCode: string
   return [baseCode || "VARIANT", modelCode, styleCode].filter(Boolean).join("-");
 }
 
+function resolveOptionLabel(options: ProductOption[], type: "MODEL" | "STYLE", code: string) {
+  if (!code) {
+    return "-";
+  }
+
+  return options.find((item) => item.type === type)?.values.find((value) => value.code === code)?.label || code;
+}
+
+function buildVariantKey(variant: Pick<ProductVariant, "modelCode" | "styleCode">) {
+  return `${variant.modelCode}::${variant.styleCode}`;
+}
+
 function generateVariants(
   template: ProductVariant,
   options: ProductOption[],
@@ -210,6 +222,60 @@ function generateVariants(
   );
 }
 
+function buildVariantMatrix(
+  template: ProductVariant,
+  options: ProductOption[],
+  fallbackMedia: MediaAsset,
+  existingVariants: ProductVariant[]
+) {
+  const generatedVariants = generateVariants(template, options, fallbackMedia);
+  const existingVariantMap = new Map(existingVariants.map((variant) => [buildVariantKey(variant), variant]));
+
+  return generatedVariants.map((generatedVariant) => {
+    const existingVariant = existingVariantMap.get(buildVariantKey(generatedVariant));
+
+    if (!existingVariant) {
+      return generatedVariant;
+    }
+
+    const existingMedia = existingVariant.media.filter((item) => item.url.trim());
+    const mergedVariant: ProductVariant = {
+      ...generatedVariant,
+      ...existingVariant,
+      variantCode: existingVariant.variantCode || generatedVariant.variantCode,
+      media: existingMedia.length ? existingVariant.media : generatedVariant.media,
+    };
+
+    return {
+      ...mergedVariant,
+      selections: buildSelections(mergedVariant, options),
+    };
+  });
+}
+
+function buildOptionsFromVariantList(variants: ProductVariant[], sku: string) {
+  const fallbackSeed = sku.trim() || "DEFAULT";
+  const modelValues = Array.from(
+    new Set(variants.map((variant) => variant.modelCode.trim()).filter(Boolean))
+  ).map((value) => ({ code: value, label: value, swatchMedia: null }));
+  const styleValues = Array.from(
+    new Set(variants.map((variant) => variant.styleCode.trim()).filter(Boolean))
+  ).map((value) => ({ code: value, label: value, swatchMedia: null }));
+
+  return [
+    {
+      type: "MODEL",
+      name: "Model",
+      values: modelValues.length ? modelValues : [{ code: `${fallbackSeed} Model`, label: `${fallbackSeed} Model`, swatchMedia: null }],
+    },
+    {
+      type: "STYLE",
+      name: "Style",
+      values: styleValues.length ? styleValues : [{ code: `${fallbackSeed} Style`, label: `${fallbackSeed} Style`, swatchMedia: null }],
+    },
+  ];
+}
+
 export function Products() {
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
@@ -219,14 +285,12 @@ export function Products() {
   const [mode, setMode] = useState<"create" | "edit" | "view">("create");
   const [form, setForm] = useState<AdminProductPayload>(createEmptyProductForm());
   const [tagsText, setTagsText] = useState("");
-  const [modelValuesText, setModelValuesText] = useState("");
-  const [styleValuesText, setStyleValuesText] = useState("");
   const [priceText, setPriceText] = useState("0");
   const [compareAtPriceText, setCompareAtPriceText] = useState("");
   const [costPriceText, setCostPriceText] = useState("");
   const [error, setError] = useState("");
   const [isUploadingGallery, setIsUploadingGallery] = useState(false);
-  const [uploadingVariantMediaIndex, setUploadingVariantMediaIndex] = useState<number | null>(null);
+  const [uploadingVariantMediaKey, setUploadingVariantMediaKey] = useState<string | null>(null);
 
   const loadData = () => {
     adminApi.products().then(setProducts).catch((err: Error) => setError(err.message));
@@ -252,14 +316,24 @@ export function Products() {
 
   const primaryMedia = form.gallery[0] || createEmptyMedia();
   const primaryVariant = form.variants[0] || createVariant();
+  const variantPreview = form.variants;
+  const variantPriceRange = useMemo(() => {
+    if (!variantPreview.length) {
+      return null;
+    }
+
+    const prices = variantPreview.map((variant) => variant.price);
+    return {
+      min: Math.min(...prices),
+      max: Math.max(...prices),
+    };
+  }, [variantPreview]);
 
   const openCreate = () => {
     setMode("create");
     setSelectedProduct(null);
     setForm(createEmptyProductForm());
     setTagsText("");
-    setModelValuesText("");
-    setStyleValuesText("");
     setPriceText("0");
     setCompareAtPriceText("");
     setCostPriceText("");
@@ -268,8 +342,6 @@ export function Products() {
   };
 
   const openFor = (product: AdminProduct, nextMode: "edit" | "view") => {
-    const modelOption = product.options.find((item) => item.type === "MODEL");
-    const styleOption = product.options.find((item) => item.type === "STYLE");
     const firstVariant = product.variants[0] || createVariant();
 
     setMode(nextMode);
@@ -288,13 +360,11 @@ export function Products() {
       tags: product.tags,
       gallery: [product.gallery[0] || createEmptyMedia()],
       options: product.options,
-      variants: [firstVariant],
+      variants: product.variants.length ? product.variants : [firstVariant],
       featured: product.featured,
       status: product.status,
     });
     setTagsText(product.tags.join(", "));
-    setModelValuesText((modelOption?.values || []).map((item) => item.label).join(", "));
-    setStyleValuesText((styleOption?.values || []).map((item) => item.label).join(", "));
     setPriceText(formatVndInput(firstVariant.price));
     setCompareAtPriceText(formatVndInput(firstVariant.compareAtPrice));
     setCostPriceText(formatVndInput(firstVariant.costPrice));
@@ -305,7 +375,47 @@ export function Products() {
   const updatePrimaryVariant = (patch: Partial<ProductVariant>) => {
     setForm((prev) => ({
       ...prev,
-      variants: [{ ...(prev.variants[0] || createVariant()), ...patch }],
+      variants: prev.variants.map((variant, index) =>
+        index === 0 ? { ...(prev.variants[0] || createVariant()), ...patch } : variant
+      ),
+    }));
+  };
+
+  const addVariantEntry = () => {
+    setForm((prev) => {
+      const seed = prev.variants[0] || createVariant();
+      const nextIndex = prev.variants.length + 1;
+      return {
+        ...prev,
+        variants: [
+          ...prev.variants,
+          {
+            ...createVariant(),
+            price: seed.price,
+            compareAtPrice: seed.compareAtPrice,
+            costPrice: seed.costPrice,
+            stockQuantity: seed.stockQuantity,
+            weightInGram: seed.weightInGram,
+            active: true,
+            variantCode: `${prev.sku.trim() || "VARIANT"}-${nextIndex}`,
+          },
+        ],
+      };
+    });
+  };
+
+  const removeVariant = (variantIndex: number) => {
+    setForm((prev) => ({
+      ...prev,
+      variants:
+        prev.variants.length === 1 ? [createVariant()] : prev.variants.filter((_, index) => index !== variantIndex),
+    }));
+  };
+
+  const updateVariant = (variantIndex: number, patch: Partial<ProductVariant>) => {
+    setForm((prev) => ({
+      ...prev,
+      variants: prev.variants.map((variant, index) => (index === variantIndex ? { ...variant, ...patch } : variant)),
     }));
   };
 
@@ -354,6 +464,7 @@ export function Products() {
   };
 
   const handleVariantMediaFileChange = async (
+    variantIndex: number,
     mediaIndex: number,
     field: "url" | "thumbnailUrl",
     file: File | null
@@ -362,21 +473,20 @@ export function Products() {
       return;
     }
 
-    setUploadingVariantMediaIndex(mediaIndex);
+    setUploadingVariantMediaKey(`${variantIndex}:${mediaIndex}:${field}`);
     setError("");
 
     try {
       const uploaded = await adminApi.uploadFile(file, "products");
-      const currentMedia = primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()];
-      updatePrimaryVariant({
-        media: currentMedia.map((item, index) =>
-          index === mediaIndex ? { ...item, [field]: uploaded.url } : item
-        ),
+      const currentVariant = form.variants[variantIndex] || createVariant();
+      const currentMedia = currentVariant.media.length ? currentVariant.media : [createEmptyMedia()];
+      updateVariant(variantIndex, {
+        media: currentMedia.map((item, index) => (index === mediaIndex ? { ...item, [field]: uploaded.url } : item)),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to upload selected file");
     } finally {
-      setUploadingVariantMediaIndex(null);
+      setUploadingVariantMediaKey(null);
     }
   };
 
@@ -392,14 +502,18 @@ export function Products() {
         throw new Error("Name, slug, and SKU are required");
       }
 
-      const options = ensureRequiredOptions(modelValuesText.trim(), styleValuesText.trim(), form.sku);
+      const options = buildOptionsFromVariantList(form.variants, form.sku);
 
       const gallery = primaryMedia.url.trim() ? [primaryMedia] : [];
-      const variantTemplate: ProductVariant = {
-        ...primaryVariant,
-        variantCode: primaryVariant.variantCode.trim() || form.sku.trim() || "VARIANT",
-      };
-      const variants = generateVariants(variantTemplate, options, primaryMedia);
+      const variants = form.variants.map((variant) => ({
+        ...variant,
+        selections: buildSelections(variant, options),
+        media: variant.media.filter((item) => item.url.trim()).length
+          ? variant.media
+          : primaryMedia.url.trim()
+            ? [primaryMedia]
+            : [],
+      }));
 
       if (!variants.length) {
         throw new Error("At least one product variant is required");
@@ -529,9 +643,9 @@ export function Products() {
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto rounded-[28px] border border-[rgba(6,20,27,0.08)] bg-[#fcfcfb] p-0">
-          <DialogHeader className="border-b border-[rgba(6,20,27,0.08)] px-8 py-6">
-            <DialogTitle className="font-heading text-[28px]">
+        <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-h-none max-w-none overflow-hidden rounded-[28px] border border-[rgba(6,20,27,0.08)] bg-[#fcfcfb] p-0">
+          <DialogHeader className="border-b border-[rgba(6,20,27,0.08)] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+            <DialogTitle className="font-heading text-[24px] sm:text-[26px] lg:text-[28px]">
               {mode === "create" ? "Create Product" : mode === "edit" ? "Edit Product" : "Product Detail"}
             </DialogTitle>
             <DialogDescription className="text-[#5a6169]">
@@ -539,8 +653,8 @@ export function Products() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 px-8 py-8">
-            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-6">
+          <div className="h-full overflow-y-auto space-y-5 px-4 py-5 sm:px-6 lg:space-y-6 lg:px-8 lg:py-8">
+            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
               <h3 className="font-heading mb-5 text-[20px]">Basic Details</h3>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
                 <div>
@@ -579,7 +693,7 @@ export function Products() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-6">
+            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
               <h3 className="font-heading mb-5 text-[20px]">Merchandising</h3>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
                 <div>
@@ -660,7 +774,7 @@ export function Products() {
               </label>
             </section>
 
-            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-6">
+            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
               <h3 className="font-heading mb-5 text-[20px]">Main Media</h3>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-[160px_1fr_1fr]">
                 <div className="overflow-hidden rounded-2xl bg-[rgba(6,20,27,0.06)]">
@@ -710,7 +824,7 @@ export function Products() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-6">
+            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
               <h3 className="font-heading mb-5 text-[20px]">Pricing And Stock</h3>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
                 <div>
@@ -796,118 +910,324 @@ export function Products() {
                 Active variant template
               </label>
 
-              <div className="mt-6 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-5">
-                <div className="mb-4 flex items-center justify-between">
+              <div className="mt-6 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h4 className="font-heading text-[18px]">Variant Images</h4>
-                    <p className="text-sm text-[#5a6169]">Add more images if this product has many styles or looks.</p>
+                    <h4 className="font-heading text-[18px]">Variant Entries</h4>
+                    <p className="text-sm text-[#5a6169]">
+                      Add a new variant entry, then fill that variant's image and details in the matrix below.
+                    </p>
                   </div>
                   {mode !== "view" ? (
-                    <Button
-                      variant="outline"
-                      onClick={() =>
-                        updatePrimaryVariant({
-                          media: [...(primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()]), createEmptyMedia()],
-                        })
-                      }
-                    >
+                    <Button variant="outline" onClick={addVariantEntry}>
                       <Plus className="mr-2 h-4 w-4" />
-                      Add Image
+                      Add Variant Image
                     </Button>
                   ) : null}
                 </div>
 
-                <div className="space-y-4">
-                  {(primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()]).map((media, mediaIndex) => (
-                    <div
-                      key={`variant-media-${mediaIndex}`}
-                      className="grid grid-cols-1 gap-4 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-white p-4 md:grid-cols-[120px_1fr_1fr_auto]"
-                    >
-                      <div className="overflow-hidden rounded-xl bg-[rgba(6,20,27,0.06)]">
-                        {media.url ? (
-                          <img src={resolveImage(media)} alt={`variant-${mediaIndex + 1}`} className="h-24 w-full object-cover" />
-                        ) : (
-                          <div className="flex h-24 items-center justify-center text-sm text-[#7b858e]">No image</div>
-                        )}
-                      </div>
-                      <div>
-                        <FieldLabel>Browse Variant Image</FieldLabel>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          disabled={mode === "view" || uploadingVariantMediaIndex === mediaIndex}
-                          onChange={(e) => handleVariantMediaFileChange(mediaIndex, "url", e.target.files?.[0] || null)}
-                        />
-                        {uploadingVariantMediaIndex === mediaIndex ? (
-                          <p className="mt-2 flex items-center gap-2 text-sm text-[#5a6169]">
-                            <LoaderCircle className="h-4 w-4 animate-spin" />
-                            Uploading variant media...
-                          </p>
-                        ) : null}
-                      </div>
-                      <div>
-                        <FieldLabel>Browse Variant Thumbnail</FieldLabel>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          disabled={mode === "view" || uploadingVariantMediaIndex === mediaIndex}
-                          onChange={(e) =>
-                            handleVariantMediaFileChange(mediaIndex, "thumbnailUrl", e.target.files?.[0] || null)
-                          }
-                        />
-                      </div>
-                      {mode !== "view" ? (
-                        <div className="flex items-end">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              updatePrimaryVariant({
-                                media: (primaryVariant.media.length ? primaryVariant.media : [createEmptyMedia()]).filter(
-                                  (_, index) => index !== mediaIndex
-                                ),
-                              })
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                <div className="rounded-2xl border border-dashed border-[rgba(6,20,27,0.14)] bg-white px-4 py-5 text-sm text-[#5a6169]">
+                  {form.variants.length} variant {form.variants.length === 1 ? "entry" : "entries"} ready. Use the matrix below
+                  to upload image and fill variant information for each one.
                 </div>
               </div>
             </section>
 
-            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-6">
-              <h3 className="font-heading mb-5 text-[20px]">Product Choices</h3>
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <div>
-                  <FieldLabel>Model Values</FieldLabel>
-                  <Input
-                    value={modelValuesText}
-                    disabled={mode === "view"}
-                    onChange={(e) => setModelValuesText(e.target.value)}
-                    placeholder="Classic, Premium, Limited"
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Style Values</FieldLabel>
-                  <Input
-                    value={styleValuesText}
-                    disabled={mode === "view"}
-                    onChange={(e) => setStyleValuesText(e.target.value)}
-                    placeholder="Round, Oval, Heart"
-                  />
-                </div>
-              </div>
+            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
+              <h3 className="font-heading mb-5 text-[20px]">Variant Matrix</h3>
               <p className="mt-4 text-sm text-[#5a6169]">
-                Separate values with commas. Variants will be generated automatically from these choices using the price
-                and stock template above. If you leave one side empty, admin will create a single default MODEL or STYLE for you.
+                Each variant is entered manually here. When you click <span className="font-medium text-[#06141B]">Add Variant Image</span>,
+                a new variant card is created so you can fill its image, model, style, price, stock, and status.
               </p>
+
+              <div className="mt-6 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-4 sm:p-5">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <h4 className="font-heading text-[18px]">Variant Matrix</h4>
+                    <p className="text-sm text-[#5a6169]">
+                      {mode === "view"
+                        ? "All saved variants for this product."
+                        : "Each row now includes image, style, price, and a variant ID so you can distinguish each sample clearly."}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-sm text-[#5a6169] sm:grid-cols-3 xl:min-w-[360px] xl:text-right">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-[#7b858e]">Count</div>
+                      <div className="font-data text-[#06141B]">{variantPreview.length}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-[#7b858e]">Total Stock</div>
+                      <div className="font-data text-[#06141B]">
+                        {variantPreview.reduce((sum, variant) => sum + variant.stockQuantity, 0)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-[#7b858e]">Price Range</div>
+                      <div className="font-data text-[#A36B31]">
+                        {variantPriceRange
+                          ? `${formatCurrency(variantPriceRange.min)}${
+                              variantPriceRange.min !== variantPriceRange.max
+                                ? ` - ${formatCurrency(variantPriceRange.max)}`
+                                : ""
+                            }`
+                          : "-"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {variantPreview.length ? (
+                  <div className="mt-5 space-y-4">
+                    {variantPreview.map((variant, index) => {
+                      const primaryVariantImage = variant.media[0] || createEmptyMedia();
+                      const imageUploadState = `${index}:0:url`;
+
+                      return (
+                        <div
+                          key={`${variant.variantCode || "variant"}-${index}`}
+                          className="rounded-2xl border border-[rgba(6,20,27,0.08)] bg-white p-4"
+                        >
+                          <div className="space-y-4">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                              <div className="w-full max-w-[140px] shrink-0">
+                                <div className="aspect-square overflow-hidden rounded-2xl bg-[rgba(6,20,27,0.06)]">
+                                {primaryVariantImage.url ? (
+                                  <img
+                                    src={resolveImage(primaryVariantImage)}
+                                    alt={variant.variantCode || `variant-${index + 1}`}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center text-sm text-[#7b858e]">
+                                    No image
+                                  </div>
+                                )}
+                              </div>
+                                {mode !== "view" ? (
+                                  <div className="mt-3">
+                                    <FieldLabel>Variant Image</FieldLabel>
+                                    <Input
+                                      type="file"
+                                      accept="image/*"
+                                      disabled={uploadingVariantMediaKey === imageUploadState}
+                                      onChange={(e) =>
+                                        handleVariantMediaFileChange(index, 0, "url", e.target.files?.[0] || null)
+                                      }
+                                    />
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div>
+                                  <div className="text-xs uppercase tracking-[0.2em] text-[#7b858e]">
+                                    Variant {index + 1}
+                                  </div>
+                                  <div className="mt-1 font-heading text-[17px] leading-snug text-[#06141B]">
+                                    {variant.variantCode || `Variant ${index + 1}`}
+                                  </div>
+                                  <div className="mt-2 space-y-2 text-sm text-[#5a6169]">
+                                    <div>
+                                      <span className="font-medium text-[#06141B]">Model:</span>{" "}
+                                      {variant.modelCode || "-"}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-[#06141B]">Style:</span>{" "}
+                                      {variant.styleCode || "-"}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {mode === "view" ? (
+                                    <Badge
+                                      className={
+                                        variant.active
+                                          ? "border-0 bg-[rgba(237,217,135,0.2)] text-[#A36B31]"
+                                          : "border-0 bg-[rgba(6,20,27,0.08)] text-[#5a6169]"
+                                      }
+                                    >
+                                      {variant.active ? "ACTIVE" : "INACTIVE"}
+                                    </Badge>
+                                  ) : (
+                                    <>
+                                      <label className="mt-3 inline-flex items-center gap-2 rounded-full bg-[rgba(237,217,135,0.16)] px-3 py-2 text-sm text-[#7b5327]">
+                                        <input
+                                          type="checkbox"
+                                          checked={variant.active}
+                                          onChange={(e) => updateVariant(index, { active: e.target.checked })}
+                                        />
+                                        Active
+                                      </label>
+                                      <Button variant="ghost" size="sm" className="mt-3" onClick={() => removeVariant(index)}>
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Remove
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3">
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div className="min-w-0">
+                                  <FieldLabel>Variant ID</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.variantCode || "-"}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      value={variant.variantCode}
+                                      onChange={(e) => updateVariant(index, { variantCode: e.target.value })}
+                                      placeholder="Variant ID"
+                                    />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <FieldLabel>Model</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.modelCode || "-"}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      value={variant.modelCode}
+                                      onChange={(e) => updateVariant(index, { modelCode: e.target.value })}
+                                      placeholder="Classic Model"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div className="min-w-0">
+                                  <FieldLabel>Style</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.styleCode || "-"}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      value={variant.styleCode}
+                                      onChange={(e) => updateVariant(index, { styleCode: e.target.value })}
+                                      placeholder="Round Style"
+                                    />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <FieldLabel>Price</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#A36B31]">
+                                      {formatCurrency(variant.price)}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      type="number"
+                                      value={variant.price}
+                                      onChange={(e) => updateVariant(index, { price: Number(e.target.value) })}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div className="min-w-0">
+                                  <FieldLabel>Compare At Price</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.compareAtPrice ? formatCurrency(variant.compareAtPrice) : "-"}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      type="number"
+                                      value={variant.compareAtPrice ?? ""}
+                                      onChange={(e) =>
+                                        updateVariant(index, {
+                                          compareAtPrice: e.target.value ? Number(e.target.value) : null,
+                                        })
+                                      }
+                                    />
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div className="min-w-0">
+                                  <FieldLabel>Cost Price</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.costPrice ? formatCurrency(variant.costPrice) : "-"}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      type="number"
+                                      value={variant.costPrice ?? ""}
+                                      onChange={(e) =>
+                                        updateVariant(index, {
+                                          costPrice: e.target.value ? Number(e.target.value) : null,
+                                        })
+                                      }
+                                    />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <FieldLabel>Stock</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.stockQuantity}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      type="number"
+                                      value={variant.stockQuantity}
+                                      onChange={(e) => updateVariant(index, { stockQuantity: Number(e.target.value) })}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div className="min-w-0">
+                                  <FieldLabel>Weight (g)</FieldLabel>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.weightInGram ?? "-"}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      type="number"
+                                      value={variant.weightInGram ?? ""}
+                                      onChange={(e) =>
+                                        updateVariant(index, {
+                                          weightInGram: e.target.value ? Number(e.target.value) : null,
+                                        })
+                                      }
+                                    />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <FieldLabel>Media Count</FieldLabel>
+                                  <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                    {variant.media.filter((item) => item.url.trim()).length}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-white py-10 text-center text-sm text-[#7b858e]">
+                    No variants generated yet.
+                  </div>
+                )}
+              </div>
             </section>
 
-            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-6">
+            <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
               <h3 className="font-heading mb-5 text-[20px]">Description</h3>
               <div className="space-y-5">
                 <div>
@@ -926,7 +1246,7 @@ export function Products() {
               <Button
                 className="h-12 w-full rounded-2xl bg-[#06141B] text-sm font-semibold text-white hover:bg-[#0a1f29]"
                 onClick={submit}
-                disabled={isUploadingGallery || uploadingVariantMediaIndex !== null}
+                disabled={isUploadingGallery || uploadingVariantMediaKey !== null}
               >
                 {mode === "create" ? "Create Product" : "Save Changes"}
               </Button>

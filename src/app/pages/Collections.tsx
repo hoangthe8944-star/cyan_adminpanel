@@ -287,7 +287,7 @@ export function Collections() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-white max-w-5xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="w-[min(96vw,76rem)] max-w-none max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white">
           <DialogHeader>
             <DialogTitle className="font-heading">
               {mode === "create" ? "Create Collection" : mode === "edit" ? "Edit Collection" : "Collection Detail"}
