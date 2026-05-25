@@ -288,18 +288,4 @@ export interface UploadResponse {
   size: number;
 }
 
-export interface AdminChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface AdminChatRequest {
-  messages: AdminChatMessage[];
-}
-
-export interface AdminChatResponse {
-  message: AdminChatMessage;
-  model: string;
-}
-
 

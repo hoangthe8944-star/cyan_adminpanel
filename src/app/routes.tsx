@@ -9,7 +9,6 @@ import { Editorial } from "./pages/Editorial";
 import { Orders } from "./pages/Orders";
 import { Customers } from "./pages/Customers";
 import { Settings } from "./pages/Settings";
-import { Chat } from "./pages/Chat";
 
 export const router = createBrowserRouter([
   {
@@ -24,7 +23,6 @@ export const router = createBrowserRouter([
       { path: "editorial", Component: Editorial },
       { path: "orders", Component: Orders },
       { path: "customers", Component: Customers },
-      { path: "chat", Component: Chat },
       { path: "settings", Component: Settings },
     ],
   },

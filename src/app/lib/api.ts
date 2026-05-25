@@ -1,7 +1,5 @@
 import type {
   AdminBanner,
-  AdminChatMessage,
-  AdminChatResponse,
   AdminBannerPayload,
   AdminCategory,
   AdminCategoryPayload,
@@ -240,21 +238,4 @@ export const adminApi = {
     request<void>(`/api/admin/editorials/${id}`, {
       method: "DELETE",
     }),
-
-  chat: async (messages: AdminChatMessage[]) => {
-    const response = await fetch(import.meta.env.VITE_CHAT_API_URL?.trim() || "/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ messages }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Chat request failed: ${response.status}`);
-    }
-
-    return response.json() as Promise<AdminChatResponse>;
-  },
 };
