@@ -63,6 +63,7 @@ export interface ProductVariant {
   variantCode: string;
   modelCode: string;
   styleCode: string;
+  description?: string | null;
   selections: VariantSelection[];
   price: number;
   compareAtPrice?: number | null;
@@ -285,6 +286,20 @@ export interface UploadResponse {
   filename: string;
   contentType: string;
   size: number;
+}
+
+export interface AdminChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AdminChatRequest {
+  messages: AdminChatMessage[];
+}
+
+export interface AdminChatResponse {
+  message: AdminChatMessage;
+  model: string;
 }
 
 

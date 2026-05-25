@@ -43,6 +43,7 @@ const createVariant = (): ProductVariant => ({
   variantCode: "",
   modelCode: "",
   styleCode: "",
+  description: "",
   selections: [],
   price: 0,
   compareAtPrice: null,
@@ -67,7 +68,7 @@ const createEmptyProductForm = (): AdminProductPayload => ({
   tags: [],
   gallery: [createEmptyMedia()],
   options: [],
-  variants: [createVariant()],
+  variants: [],
   featured: false,
   status: "DRAFT",
 });
@@ -284,6 +285,7 @@ export function Products() {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"create" | "edit" | "view">("create");
   const [form, setForm] = useState<AdminProductPayload>(createEmptyProductForm());
+  const [variantTemplate, setVariantTemplate] = useState<ProductVariant>(createVariant());
   const [tagsText, setTagsText] = useState("");
   const [priceText, setPriceText] = useState("0");
   const [compareAtPriceText, setCompareAtPriceText] = useState("");
@@ -315,7 +317,6 @@ export function Products() {
   );
 
   const primaryMedia = form.gallery[0] || createEmptyMedia();
-  const primaryVariant = form.variants[0] || createVariant();
   const variantPreview = form.variants;
   const variantPriceRange = useMemo(() => {
     if (!variantPreview.length) {
@@ -333,6 +334,7 @@ export function Products() {
     setMode("create");
     setSelectedProduct(null);
     setForm(createEmptyProductForm());
+    setVariantTemplate(createVariant());
     setTagsText("");
     setPriceText("0");
     setCompareAtPriceText("");
@@ -360,10 +362,11 @@ export function Products() {
       tags: product.tags,
       gallery: [product.gallery[0] || createEmptyMedia()],
       options: product.options,
-      variants: product.variants.length ? product.variants : [firstVariant],
+      variants: product.variants,
       featured: product.featured,
       status: product.status,
     });
+    setVariantTemplate(firstVariant);
     setTagsText(product.tags.join(", "));
     setPriceText(formatVndInput(firstVariant.price));
     setCompareAtPriceText(formatVndInput(firstVariant.compareAtPrice));
@@ -372,18 +375,13 @@ export function Products() {
     setOpen(true);
   };
 
-  const updatePrimaryVariant = (patch: Partial<ProductVariant>) => {
-    setForm((prev) => ({
-      ...prev,
-      variants: prev.variants.map((variant, index) =>
-        index === 0 ? { ...(prev.variants[0] || createVariant()), ...patch } : variant
-      ),
-    }));
+  const updateVariantTemplate = (patch: Partial<ProductVariant>) => {
+    setVariantTemplate((prev) => ({ ...prev, ...patch }));
   };
 
   const addVariantEntry = () => {
     setForm((prev) => {
-      const seed = prev.variants[0] || createVariant();
+      const seed = variantTemplate;
       const nextIndex = prev.variants.length + 1;
       return {
         ...prev,
@@ -391,13 +389,16 @@ export function Products() {
           ...prev.variants,
           {
             ...createVariant(),
+            modelCode: seed.modelCode,
+            styleCode: seed.styleCode,
+            description: seed.description || "",
             price: seed.price,
             compareAtPrice: seed.compareAtPrice,
             costPrice: seed.costPrice,
             stockQuantity: seed.stockQuantity,
             weightInGram: seed.weightInGram,
             active: true,
-            variantCode: `${prev.sku.trim() || "VARIANT"}-${nextIndex}`,
+            variantCode: `${prev.sku.trim() || seed.variantCode.trim() || "VARIANT"}-${nextIndex}`,
           },
         ],
       };
@@ -407,8 +408,7 @@ export function Products() {
   const removeVariant = (variantIndex: number) => {
     setForm((prev) => ({
       ...prev,
-      variants:
-        prev.variants.length === 1 ? [createVariant()] : prev.variants.filter((_, index) => index !== variantIndex),
+      variants: prev.variants.filter((_, index) => index !== variantIndex),
     }));
   };
 
@@ -515,10 +515,6 @@ export function Products() {
             : [],
       }));
 
-      if (!variants.length) {
-        throw new Error("At least one product variant is required");
-      }
-
       const payload: AdminProductPayload = {
         ...form,
         tags: tagsText.split(",").map((item) => item.trim()).filter(Boolean),
@@ -527,8 +523,15 @@ export function Products() {
         categoryIds: Array.from(new Set([form.primaryCategoryId, ...form.categoryIds].filter(Boolean))),
         gallery,
         options,
-        variants,
+        variants: variants.map((variant) => ({
+          ...variant,
+          description: normalizeOptionalDescription(variant.description),
+        })),
       };
+
+      if (!payload.variants.length) {
+        throw new Error("Please click Add Variant and enter at least one product variant before saving");
+      }
 
       if (mode === "create") {
         await adminApi.createProduct(payload);
@@ -830,9 +833,9 @@ export function Products() {
                 <div>
                   <FieldLabel>Base Variant Code</FieldLabel>
                   <Input
-                    value={primaryVariant.variantCode}
+                    value={variantTemplate.variantCode}
                     disabled={mode === "view"}
-                    onChange={(e) => updatePrimaryVariant({ variantCode: e.target.value })}
+                    onChange={(e) => updateVariantTemplate({ variantCode: e.target.value })}
                     placeholder="Defaults to SKU"
                   />
                 </div>
@@ -845,7 +848,7 @@ export function Products() {
                     onChange={(e) => {
                       const nextValue = parseVndInput(e.target.value);
                       setPriceText(formatVndInput(nextValue));
-                      updatePrimaryVariant({ price: nextValue });
+                      updateVariantTemplate({ price: nextValue });
                     }}
                     placeholder="1.250.000"
                   />
@@ -859,7 +862,7 @@ export function Products() {
                     onChange={(e) => {
                       const digits = e.target.value.replace(/[^\d]/g, "");
                       setCompareAtPriceText(digits ? formatVndInput(Number(digits)) : "");
-                      updatePrimaryVariant({ compareAtPrice: digits ? Number(digits) : null });
+                      updateVariantTemplate({ compareAtPrice: digits ? Number(digits) : null });
                     }}
                     placeholder="1.500.000"
                   />
@@ -873,7 +876,7 @@ export function Products() {
                     onChange={(e) => {
                       const digits = e.target.value.replace(/[^\d]/g, "");
                       setCostPriceText(digits ? formatVndInput(Number(digits)) : "");
-                      updatePrimaryVariant({ costPrice: digits ? Number(digits) : null });
+                      updateVariantTemplate({ costPrice: digits ? Number(digits) : null });
                     }}
                     placeholder="900.000"
                   />
@@ -882,19 +885,19 @@ export function Products() {
                   <FieldLabel required>Stock Quantity</FieldLabel>
                   <Input
                     type="number"
-                    value={primaryVariant.stockQuantity}
+                    value={variantTemplate.stockQuantity}
                     disabled={mode === "view"}
-                    onChange={(e) => updatePrimaryVariant({ stockQuantity: Number(e.target.value) })}
+                    onChange={(e) => updateVariantTemplate({ stockQuantity: Number(e.target.value) })}
                   />
                 </div>
                 <div>
                   <FieldLabel>Weight (g)</FieldLabel>
                   <Input
                     type="number"
-                    value={primaryVariant.weightInGram ?? ""}
+                    value={variantTemplate.weightInGram ?? ""}
                     disabled={mode === "view"}
                     onChange={(e) =>
-                      updatePrimaryVariant({ weightInGram: e.target.value ? Number(e.target.value) : null })
+                      updateVariantTemplate({ weightInGram: e.target.value ? Number(e.target.value) : null })
                     }
                   />
                 </div>
@@ -903,9 +906,9 @@ export function Products() {
               <label className="mt-5 inline-flex items-center gap-3 rounded-full bg-[rgba(237,217,135,0.16)] px-4 py-3 text-sm font-medium text-[#7b5327]">
                 <input
                   type="checkbox"
-                  checked={primaryVariant.active}
+                  checked={variantTemplate.active}
                   disabled={mode === "view"}
-                  onChange={(e) => updatePrimaryVariant({ active: e.target.checked })}
+                  onChange={(e) => updateVariantTemplate({ active: e.target.checked })}
                 />
                 Active variant template
               </label>
@@ -927,8 +930,10 @@ export function Products() {
                 </div>
 
                 <div className="rounded-2xl border border-dashed border-[rgba(6,20,27,0.14)] bg-white px-4 py-5 text-sm text-[#5a6169]">
-                  {form.variants.length} variant {form.variants.length === 1 ? "entry" : "entries"} ready. Use the matrix below
-                  to upload image and fill variant information for each one.
+                  {form.variants.length} variant {form.variants.length === 1 ? "entry" : "entries"} ready.
+                  {form.variants.length
+                    ? " Use the matrix below to upload image and fill variant information for each one."
+                    : " Variant Matrix will only open after you click Add Variant Image."}
                 </div>
               </div>
             </section>
@@ -947,7 +952,7 @@ export function Products() {
                     <p className="text-sm text-[#5a6169]">
                       {mode === "view"
                         ? "All saved variants for this product."
-                        : "Each row now includes image, style, price, and a variant ID so you can distinguish each sample clearly."}
+                        : "Each row now includes image, description, style, price, and a variant ID so you can distinguish each sample clearly."}
                     </p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 text-sm text-[#5a6169] sm:grid-cols-3 xl:min-w-[360px] xl:text-right">
@@ -1129,6 +1134,22 @@ export function Products() {
                                     />
                                   )}
                                 </div>
+                              </div>
+
+                              <div className="min-w-0">
+                                <FieldLabel>Description</FieldLabel>
+                                {mode === "view" ? (
+                                  <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B] whitespace-pre-wrap">
+                                    {variant.description || "-"}
+                                  </div>
+                                ) : (
+                                  <Textarea
+                                    className="min-h-24"
+                                    value={variant.description || ""}
+                                    onChange={(e) => updateVariant(index, { description: e.target.value })}
+                                    placeholder="Variant description"
+                                  />
+                                )}
                               </div>
 
                               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

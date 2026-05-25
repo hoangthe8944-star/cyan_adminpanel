@@ -1,5 +1,6 @@
 import { Outlet, NavLink } from "react-router";
 import {
+  MessageSquare,
   LayoutDashboard,
   FolderTree,
   Gem,
@@ -21,6 +22,7 @@ export function AdminLayout() {
     { path: "/editorial", label: "Editorial", icon: FileText },
     { path: "/orders", label: "Orders", icon: ShoppingCart },
     { path: "/customers", label: "Customers", icon: Users },
+    { path: "/chat", label: "AI Chat", icon: MessageSquare },
     { path: "/settings", label: "Settings", icon: SettingsIcon },
   ];
 
