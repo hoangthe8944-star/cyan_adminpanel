@@ -19,4 +19,30 @@
 
   Optional override:
   - Set `VITE_API_BASE_URL` to force the app to use exactly one backend
+  - Set `VITE_CHAT_API_PATH` if your chat endpoint is not `/api/admin/chat/conversations`
+
+  ## Live conversation inbox
+
+  The `Messages` page now includes a human-to-human conversation UI with polling every 3 seconds.
+
+  Expected endpoints under `VITE_CHAT_API_PATH` (default `/api/admin/chat/conversations`):
+
+  - `GET /`
+  - `GET /:conversationId`
+  - `POST /:conversationId/reply`
+  - `PATCH /:conversationId/read`
+
+  Example send payload:
+
+  ```json
+  {
+    "adminName": "Cyan Admin",
+    "message": "Xin chao, don hang cua ban dang duoc dong goi."
+  }
+  ```
+
+  The frontend normalizes several common response shapes:
+  - Conversation lists from arrays or `conversations`, `items`, `data`
+  - Conversation detail responses with nested `messages`
+  - Message sender fields from nested `sender` or flat fields like `senderName`, `customerName`
   

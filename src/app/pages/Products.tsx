@@ -40,10 +40,11 @@ const createEmptyMedia = (): MediaAsset => ({
 });
 
 const createVariant = (): ProductVariant => ({
+  productName: "",
   variantCode: "",
   modelCode: "",
   styleCode: "",
-  description: "",
+  fullDescription: "",
   selections: [],
   price: 0,
   compareAtPrice: null,
@@ -180,6 +181,29 @@ function buildVariantCode(baseCode: string, modelCode: string, styleCode: string
   return [baseCode || "VARIANT", modelCode, styleCode].filter(Boolean).join("-");
 }
 
+function normalizeVariantCode(value: string, fallbackSeed: string, modelCode: string, styleCode: string, index: number) {
+  const trimmed = value.trim();
+  const canonical = [fallbackSeed, modelCode, styleCode].filter(Boolean).join("-");
+  const doubledCanonical = canonical ? `${canonical}-${canonical}` : "";
+
+  if (!trimmed) {
+    return canonical || `${fallbackSeed}-${index + 1}`;
+  }
+
+  if (trimmed === doubledCanonical) {
+    return canonical;
+  }
+
+  if (canonical && trimmed.endsWith(`-${modelCode}-${styleCode}`)) {
+    const repeatedSegment = `${modelCode}-${styleCode}-${modelCode}-${styleCode}`;
+    if (trimmed.endsWith(repeatedSegment)) {
+      return canonical;
+    }
+  }
+
+  return trimmed;
+}
+
 function resolveOptionLabel(options: ProductOption[], type: "MODEL" | "STYLE", code: string) {
   if (!code) {
     return "-";
@@ -277,6 +301,96 @@ function buildOptionsFromVariantList(variants: ProductVariant[], sku: string) {
   ];
 }
 
+function createAutoVariant(form: AdminProductPayload, primaryMedia: MediaAsset, template?: ProductVariant): ProductVariant {
+  const seed = template || createVariant();
+  const fallbackSeed = form.sku.trim() || "DEFAULT";
+  const modelCode = seed.modelCode.trim() || `${fallbackSeed}_MODEL`;
+  const styleCode = seed.styleCode.trim() || `${fallbackSeed}_STYLE`;
+  const resolvedMedia = primaryMedia.url.trim() ? [primaryMedia] : seed.media.filter((item) => item.url.trim());
+
+  return {
+    ...createVariant(),
+    ...seed,
+    productName: seed.productName || form.name,
+    variantCode: seed.variantCode.trim() || form.sku.trim() || "VARIANT-1",
+    modelCode,
+    styleCode,
+    fullDescription: seed.fullDescription || form.description || "",
+    media: resolvedMedia.length ? resolvedMedia : [createEmptyMedia()],
+  };
+}
+
+function normalizeVariantForSubmit(
+  variant: ProductVariant,
+  form: AdminProductPayload,
+  primaryMedia: MediaAsset,
+  index: number
+): ProductVariant {
+  const fallbackSeed = form.sku.trim() || "DEFAULT";
+  const normalizedModelCode = variant.modelCode.trim() || `${fallbackSeed}_MODEL_${index + 1}`;
+  const normalizedStyleCode = variant.styleCode.trim() || `${fallbackSeed}_STYLE_${index + 1}`;
+  const normalizedMedia = variant.media.filter((item) => item.url.trim()).length
+    ? variant.media
+    : primaryMedia.url.trim()
+      ? [primaryMedia]
+      : [];
+
+  return {
+    ...variant,
+    productName: form.name,
+    variantCode: normalizeVariantCode(variant.variantCode, fallbackSeed, normalizedModelCode, normalizedStyleCode, index),
+    modelCode: normalizedModelCode,
+    styleCode: normalizedStyleCode,
+    media: normalizedMedia,
+  };
+}
+
+function resolveGalleryFromVariants(primaryMedia: MediaAsset, variants: ProductVariant[]) {
+  if (primaryMedia.url.trim()) {
+    return [primaryMedia];
+  }
+
+  const firstVariantMedia = variants.flatMap((variant) => variant.media).find((item) => item.url.trim());
+  return firstVariantMedia ? [firstVariantMedia] : [];
+}
+
+function shouldSyncInheritedText(currentValue?: string | null, inheritedValue?: string | null) {
+  const current = (currentValue || "").trim();
+  const inherited = (inheritedValue || "").trim();
+  return !current || current === inherited;
+}
+
+function normalizeMediaAsset(asset: MediaAsset): MediaAsset {
+  return {
+    mediaType: asset.mediaType || "IMAGE",
+    url: asset.url || "",
+    thumbnailUrl: asset.thumbnailUrl || "",
+    altText: asset.altText || "",
+  };
+}
+
+function buildVariantPayload(variant: ProductVariant): ProductVariant {
+  return {
+    productName: (variant.productName || "").trim(),
+    variantCode: variant.variantCode.trim(),
+    modelCode: variant.modelCode.trim(),
+    styleCode: variant.styleCode.trim(),
+    fullDescription: normalizeOptionalDescription(variant.fullDescription),
+    selections: variant.selections.map((selection) => ({
+      optionType: selection.optionType,
+      valueCode: selection.valueCode,
+      valueLabel: selection.valueLabel,
+    })),
+    price: variant.price,
+    compareAtPrice: variant.compareAtPrice ?? null,
+    costPrice: variant.costPrice ?? null,
+    stockQuantity: variant.stockQuantity,
+    weightInGram: variant.weightInGram ?? null,
+    active: variant.active,
+    media: variant.media.map(normalizeMediaAsset),
+  };
+}
+
 export function Products() {
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
@@ -366,7 +480,11 @@ export function Products() {
       featured: product.featured,
       status: product.status,
     });
-    setVariantTemplate(firstVariant);
+    setVariantTemplate({
+      ...firstVariant,
+      productName: product.name,
+      fullDescription: "",
+    });
     setTagsText(product.tags.join(", "));
     setPriceText(formatVndInput(firstVariant.price));
     setCompareAtPriceText(formatVndInput(firstVariant.compareAtPrice));
@@ -383,15 +501,17 @@ export function Products() {
     setForm((prev) => {
       const seed = variantTemplate;
       const nextIndex = prev.variants.length + 1;
+      const inheritedPrimaryMedia = prev.gallery[0]?.url?.trim() ? [prev.gallery[0]] : [createEmptyMedia()];
       return {
         ...prev,
         variants: [
           ...prev.variants,
           {
             ...createVariant(),
+            productName: prev.name,
             modelCode: seed.modelCode,
             styleCode: seed.styleCode,
-            description: seed.description || "",
+            fullDescription: nextIndex === 1 ? seed.fullDescription || prev.description || "" : seed.fullDescription || "",
             price: seed.price,
             compareAtPrice: seed.compareAtPrice,
             costPrice: seed.costPrice,
@@ -399,6 +519,7 @@ export function Products() {
             weightInGram: seed.weightInGram,
             active: true,
             variantCode: `${prev.sku.trim() || seed.variantCode.trim() || "VARIANT"}-${nextIndex}`,
+            media: seed.media.filter((item) => item.url.trim()).length ? seed.media : inheritedPrimaryMedia,
           },
         ],
       };
@@ -439,6 +560,33 @@ export function Products() {
       ...prev,
       name: value,
       slug: buildAutoSlug(value),
+      variants: prev.variants.map((variant) => ({
+        ...variant,
+        productName: value,
+      })),
+    }));
+    setVariantTemplate((prev) => ({
+      ...prev,
+      productName: value,
+    }));
+  };
+
+  const handleShortDescriptionChange = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      shortDescription: value,
+    }));
+  };
+
+  const handleFullDescriptionChange = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      description: value,
+      variants: prev.variants.map((variant, index) => ({
+        ...variant,
+        fullDescription:
+          index === 0 && shouldSyncInheritedText(variant.fullDescription, prev.description) ? value : variant.fullDescription,
+      })),
     }));
   };
 
@@ -455,6 +603,21 @@ export function Products() {
       setForm((prev) => ({
         ...prev,
         gallery: [{ ...(prev.gallery[0] || createEmptyMedia()), [field]: uploaded.url }],
+        variants: prev.variants.map((variant, index) => {
+          const currentMedia = variant.media.length ? variant.media : [createEmptyMedia()];
+          const shouldSyncVariantPrimary = field === "url" && index >= 0 && !(currentMedia[0]?.url?.trim());
+
+          if (!shouldSyncVariantPrimary) {
+            return variant;
+          }
+
+          return {
+            ...variant,
+            media: currentMedia.map((item, mediaIndex) =>
+              mediaIndex === 0 ? { ...item, url: uploaded.url } : item
+            ),
+          };
+        }),
       }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to upload selected file");
@@ -480,8 +643,24 @@ export function Products() {
       const uploaded = await adminApi.uploadFile(file, "products");
       const currentVariant = form.variants[variantIndex] || createVariant();
       const currentMedia = currentVariant.media.length ? currentVariant.media : [createEmptyMedia()];
-      updateVariant(variantIndex, {
-        media: currentMedia.map((item, index) => (index === mediaIndex ? { ...item, [field]: uploaded.url } : item)),
+      const nextMedia = currentMedia.map((item, index) => (index === mediaIndex ? { ...item, [field]: uploaded.url } : item));
+
+      setForm((prev) => {
+        const nextGallery = [...prev.gallery];
+        const shouldSyncPrimaryGallery = field === "url" && !(prev.gallery[0]?.url?.trim());
+
+        if (shouldSyncPrimaryGallery) {
+          nextGallery[0] = {
+            ...(nextGallery[0] || createEmptyMedia()),
+            url: uploaded.url,
+          };
+        }
+
+        return {
+          ...prev,
+          gallery: nextGallery.length ? nextGallery : [createEmptyMedia()],
+          variants: prev.variants.map((variant, index) => (index === variantIndex ? { ...variant, media: nextMedia } : variant)),
+        };
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to upload selected file");
@@ -502,36 +681,45 @@ export function Products() {
         throw new Error("Name, slug, and SKU are required");
       }
 
-      const options = buildOptionsFromVariantList(form.variants, form.sku);
-
-      const gallery = primaryMedia.url.trim() ? [primaryMedia] : [];
-      const variants = form.variants.map((variant) => ({
+      const normalizedVariantList = (form.variants.length ? form.variants : [createAutoVariant(form, primaryMedia, variantTemplate)]).map(
+        (variant, index) => normalizeVariantForSubmit(variant, form, primaryMedia, index)
+      );
+      const options = buildOptionsFromVariantList(normalizedVariantList, form.sku);
+      const variants = normalizedVariantList.map((variant) => ({
         ...variant,
         selections: buildSelections(variant, options),
-        media: variant.media.filter((item) => item.url.trim()).length
-          ? variant.media
-          : primaryMedia.url.trim()
-            ? [primaryMedia]
-            : [],
+        media: variant.media,
       }));
+      const gallery = resolveGalleryFromVariants(primaryMedia, variants);
 
       const payload: AdminProductPayload = {
-        ...form,
-        tags: tagsText.split(",").map((item) => item.trim()).filter(Boolean),
+        name: form.name.trim(),
+        slug: form.slug.trim(),
+        sku: form.sku.trim(),
         shortDescription: normalizeOptionalDescription(form.shortDescription),
         description: normalizeOptionalDescription(form.description),
+        brand: (form.brand || "").trim(),
+        material: (form.material || "").trim(),
+        gemstone: (form.gemstone || "").trim(),
+        primaryCategoryId: form.primaryCategoryId.trim(),
         categoryIds: Array.from(new Set([form.primaryCategoryId, ...form.categoryIds].filter(Boolean))),
-        gallery,
-        options,
-        variants: variants.map((variant) => ({
-          ...variant,
-          description: normalizeOptionalDescription(variant.description),
+        tags: tagsText.split(",").map((item) => item.trim()).filter(Boolean),
+        gallery: gallery.map(normalizeMediaAsset),
+        options: options.map((option) => ({
+          type: option.type,
+          name: option.name,
+          values: option.values.map((value) => ({
+            code: value.code,
+            label: value.label,
+            swatchMedia: value.swatchMedia ? normalizeMediaAsset(value.swatchMedia) : null,
+          })),
         })),
+        variants: variants.map(buildVariantPayload),
+        featured: form.featured,
+        status: form.status,
       };
 
-      if (!payload.variants.length) {
-        throw new Error("Please click Add Variant and enter at least one product variant before saving");
-      }
+      console.log("[Products] submit payload JSON", JSON.stringify(payload, null, 2));
 
       if (mode === "create") {
         await adminApi.createProduct(payload);
@@ -687,13 +875,13 @@ export function Products() {
               </div>
               <div className="mt-5">
                 <FieldLabel>Short Description</FieldLabel>
-                <DescriptionField
-                  minHeightClass="min-h-24"
-                  mode={mode}
-                  value={form.shortDescription || ""}
-                  onChange={(value) => setForm({ ...form, shortDescription: value })}
-                />
-              </div>
+                  <DescriptionField
+                    minHeightClass="min-h-24"
+                    mode={mode}
+                    value={form.shortDescription || ""}
+                    onChange={handleShortDescriptionChange}
+                  />
+                </div>
             </section>
 
             <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
@@ -918,13 +1106,13 @@ export function Products() {
                   <div>
                     <h4 className="font-heading text-[18px]">Variant Entries</h4>
                     <p className="text-sm text-[#5a6169]">
-                      Add a new variant entry, then fill that variant's image and details in the matrix below.
+                      New variants inherit the current product defaults first, then you can customize each one below.
                     </p>
                   </div>
                   {mode !== "view" ? (
                     <Button variant="outline" onClick={addVariantEntry}>
                       <Plus className="mr-2 h-4 w-4" />
-                      Add Variant Image
+                      Add Variant
                     </Button>
                   ) : null}
                 </div>
@@ -932,8 +1120,8 @@ export function Products() {
                 <div className="rounded-2xl border border-dashed border-[rgba(6,20,27,0.14)] bg-white px-4 py-5 text-sm text-[#5a6169]">
                   {form.variants.length} variant {form.variants.length === 1 ? "entry" : "entries"} ready.
                   {form.variants.length
-                    ? " Use the matrix below to upload image and fill variant information for each one."
-                    : " Variant Matrix will only open after you click Add Variant Image."}
+                    ? " Use the matrix below to fine-tune image and details for each one."
+                    : " Variant Matrix will open after you click Add Variant."}
                 </div>
               </div>
             </section>
@@ -941,8 +1129,8 @@ export function Products() {
             <section className="rounded-3xl border border-[rgba(6,20,27,0.08)] bg-white p-4 sm:p-5 lg:p-6">
               <h3 className="font-heading mb-5 text-[20px]">Variant Matrix</h3>
               <p className="mt-4 text-sm text-[#5a6169]">
-                Each variant is entered manually here. When you click <span className="font-medium text-[#06141B]">Add Variant Image</span>,
-                a new variant card is created so you can fill its image, model, style, price, stock, and status.
+                Each variant starts from the current product defaults. After you click <span className="font-medium text-[#06141B]">Add Variant</span>,
+                you can adjust image, model, style, price, stock, and status for that specific version.
               </p>
 
               <div className="mt-6 rounded-2xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] p-4 sm:p-5">
@@ -1029,9 +1217,13 @@ export function Products() {
                                     Variant {index + 1}
                                   </div>
                                   <div className="mt-1 font-heading text-[17px] leading-snug text-[#06141B]">
-                                    {variant.variantCode || `Variant ${index + 1}`}
+                                    {form.name || `Variant ${index + 1}`}
                                   </div>
                                   <div className="mt-2 space-y-2 text-sm text-[#5a6169]">
+                                    <div>
+                                      <span className="font-medium text-[#06141B]">Product Name:</span>{" "}
+                                      {variant.productName || form.name || "-"}
+                                    </div>
                                     <div>
                                       <span className="font-medium text-[#06141B]">Model:</span>{" "}
                                       {variant.modelCode || "-"}
@@ -1076,6 +1268,12 @@ export function Products() {
                             <div className="grid grid-cols-1 gap-3">
                               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                 <div className="min-w-0">
+                                  <FieldLabel>Product Name</FieldLabel>
+                                  <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                    {form.name || "-"}
+                                  </div>
+                                </div>
+                                <div className="min-w-0">
                                   <FieldLabel>Variant ID</FieldLabel>
                                   {mode === "view" ? (
                                     <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
@@ -1089,6 +1287,9 @@ export function Products() {
                                     />
                                   )}
                                 </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                 <div className="min-w-0">
                                   <FieldLabel>Model</FieldLabel>
                                   {mode === "view" ? (
@@ -1103,9 +1304,6 @@ export function Products() {
                                     />
                                   )}
                                 </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                 <div className="min-w-0">
                                   <FieldLabel>Style</FieldLabel>
                                   {mode === "view" ? (
@@ -1137,17 +1335,17 @@ export function Products() {
                               </div>
 
                               <div className="min-w-0">
-                                <FieldLabel>Description</FieldLabel>
+                                <FieldLabel>Variant Full Description</FieldLabel>
                                 {mode === "view" ? (
                                   <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B] whitespace-pre-wrap">
-                                    {variant.description || "-"}
+                                    {variant.fullDescription || "-"}
                                   </div>
                                 ) : (
                                   <Textarea
                                     className="min-h-24"
-                                    value={variant.description || ""}
-                                    onChange={(e) => updateVariant(index, { description: e.target.value })}
-                                    placeholder="Variant description"
+                                    value={variant.fullDescription || ""}
+                                    onChange={(e) => updateVariant(index, { fullDescription: e.target.value })}
+                                    placeholder="Variant full description"
                                   />
                                 )}
                               </div>
@@ -1257,7 +1455,7 @@ export function Products() {
                     minHeightClass="min-h-32"
                     mode={mode}
                     value={form.description || ""}
-                    onChange={(value) => setForm({ ...form, description: value })}
+                    onChange={handleFullDescriptionChange}
                   />
                 </div>
               </div>

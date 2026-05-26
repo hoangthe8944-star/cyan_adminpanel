@@ -8,6 +8,7 @@ import { Collections } from "./pages/Collections";
 import { Editorial } from "./pages/Editorial";
 import { Orders } from "./pages/Orders";
 import { Customers } from "./pages/Customers";
+import { Messages } from "./pages/Messages";
 import { Settings } from "./pages/Settings";
 
 export const router = createBrowserRouter([
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "editorial", Component: Editorial },
       { path: "orders", Component: Orders },
       { path: "customers", Component: Customers },
+      { path: "messages", Component: Messages },
       { path: "settings", Component: Settings },
     ],
   },

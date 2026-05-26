@@ -1,29 +1,118 @@
-import { Card } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { useEffect, useMemo, useState } from "react";
+
 import { Crown } from "lucide-react";
 
-interface Customer {
-  id: number;
+import { adminApi, formatCurrency } from "../lib/api";
+import type { AdminOrder } from "../lib/types";
+import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { Badge } from "../components/ui/badge";
+import { Card } from "../components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+
+interface CustomerSummary {
+  id: string;
   name: string;
   email: string;
+  phoneNumber: string;
   orders: number;
   totalSpent: number;
   tier: "regular" | "vip" | "platinum";
   joinDate: string;
 }
 
-export function Customers() {
-  const customers: Customer[] = [
-    { id: 1, name: "Sarah Chen", email: "sarah.chen@email.com", orders: 12, totalSpent: 18500, tier: "platinum", joinDate: "2025-01-15" },
-    { id: 2, name: "Emma Wilson", email: "emma.w@email.com", orders: 8, totalSpent: 12200, tier: "vip", joinDate: "2025-03-22" },
-    { id: 3, name: "Michael Brown", email: "m.brown@email.com", orders: 3, totalSpent: 2100, tier: "regular", joinDate: "2026-02-10" },
-    { id: 4, name: "Lisa Anderson", email: "lisa.a@email.com", orders: 15, totalSpent: 24000, tier: "platinum", joinDate: "2024-11-05" },
-    { id: 5, name: "David Lee", email: "david.lee@email.com", orders: 6, totalSpent: 8500, tier: "vip", joinDate: "2025-08-18" },
-  ];
+function resolveCustomerKey(order: AdminOrder) {
+  return order.customer.email?.trim().toLowerCase() || order.customer.phoneNumber.trim() || order.id;
+}
 
-  const getTierBadge = (tier: Customer["tier"]) => {
+function resolveTier(totalSpent: number, orderCount: number): CustomerSummary["tier"] {
+  if (totalSpent >= 20000000 || orderCount >= 10) {
+    return "platinum";
+  }
+
+  if (totalSpent >= 8000000 || orderCount >= 4) {
+    return "vip";
+  }
+
+  return "regular";
+}
+
+function formatJoinDate(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-CA");
+}
+
+export function Customers() {
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    adminApi.orders().then(setOrders).catch((err: Error) => setError(err.message));
+  }, []);
+
+  const customers = useMemo<CustomerSummary[]>(() => {
+    const map = new Map<string, CustomerSummary>();
+
+    for (const order of orders) {
+      const key = resolveCustomerKey(order);
+      const existing = map.get(key);
+      const createdAt = order.createdAt || null;
+
+      if (!existing) {
+        map.set(key, {
+          id: key,
+          name: order.customer.fullName,
+          email: order.customer.email || "-",
+          phoneNumber: order.customer.phoneNumber,
+          orders: 1,
+          totalSpent: order.totalAmount,
+          tier: resolveTier(order.totalAmount, 1),
+          joinDate: createdAt || "",
+        });
+        continue;
+      }
+
+      const nextOrders = existing.orders + 1;
+      const nextSpent = existing.totalSpent + order.totalAmount;
+      const earliestJoinDate =
+        existing.joinDate && createdAt
+          ? new Date(existing.joinDate).getTime() <= new Date(createdAt).getTime()
+            ? existing.joinDate
+            : createdAt
+          : existing.joinDate || createdAt || "";
+
+      map.set(key, {
+        ...existing,
+        name: existing.name || order.customer.fullName,
+        email: existing.email !== "-" ? existing.email : order.customer.email || "-",
+        phoneNumber: existing.phoneNumber || order.customer.phoneNumber,
+        orders: nextOrders,
+        totalSpent: nextSpent,
+        tier: resolveTier(nextSpent, nextOrders),
+        joinDate: earliestJoinDate,
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.totalSpent - a.totalSpent);
+  }, [orders]);
+
+  const stats = useMemo(
+    () => ({
+      totalCustomers: customers.length,
+      vipMembers: customers.filter((customer) => customer.tier === "vip" || customer.tier === "platinum").length,
+      lifetimeValue: customers.reduce((sum, customer) => sum + customer.totalSpent, 0),
+    }),
+    [customers]
+  );
+
+  const getTierBadge = (tier: CustomerSummary["tier"]) => {
     switch (tier) {
       case "platinum":
         return <Badge className="bg-[#A36B31] text-white border-0"><Crown className="w-3 h-3 mr-1" />Platinum</Badge>;
@@ -40,35 +129,35 @@ export function Customers() {
 
   return (
     <div className="p-8">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="font-heading mb-2">Customer Management</h1>
-        <p className="text-[#5a6169]">Manage customer relationships and loyalty</p>
+        <p className="text-[#5a6169]">Live customer summary derived from Cyan order data</p>
       </div>
 
-      {/* Stats */}
+      {error ? <div className="mb-4 text-sm text-red-600">{error}</div> : null}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card className="p-6 bg-white border-[rgba(6,20,27,0.1)]">
           <p className="text-sm text-[#5a6169] mb-1 font-data">Total Customers</p>
-          <p className="text-3xl font-data">1,234</p>
+          <p className="text-3xl font-data">{stats.totalCustomers}</p>
         </Card>
         <Card className="p-6 bg-white border-[rgba(6,20,27,0.1)]">
           <p className="text-sm text-[#5a6169] mb-1 font-data">VIP Members</p>
-          <p className="text-3xl font-data text-[#A36B31]">87</p>
+          <p className="text-3xl font-data text-[#A36B31]">{stats.vipMembers}</p>
         </Card>
         <Card className="p-6 bg-white border-[rgba(6,20,27,0.1)]">
           <p className="text-sm text-[#5a6169] mb-1 font-data">Lifetime Value</p>
-          <p className="text-3xl font-data">$892k</p>
+          <p className="text-3xl font-data">{formatCurrency(stats.lifetimeValue)}</p>
         </Card>
       </div>
 
-      {/* Customers Table */}
       <Card className="bg-white border-[rgba(6,20,27,0.1)]">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent border-[rgba(6,20,27,0.05)]">
               <TableHead className="font-data">Customer</TableHead>
               <TableHead className="font-data">Email</TableHead>
+              <TableHead className="font-data">Phone</TableHead>
               <TableHead className="font-data">Orders</TableHead>
               <TableHead className="font-data">Total Spent</TableHead>
               <TableHead className="font-data">Tier</TableHead>
@@ -89,12 +178,20 @@ export function Customers() {
                   </div>
                 </TableCell>
                 <TableCell className="font-data text-[#5a6169]">{customer.email}</TableCell>
+                <TableCell className="font-data text-[#5a6169]">{customer.phoneNumber}</TableCell>
                 <TableCell className="font-data">{customer.orders}</TableCell>
-                <TableCell className="font-data text-[#A36B31]">${customer.totalSpent.toLocaleString()}</TableCell>
+                <TableCell className="font-data text-[#A36B31]">{formatCurrency(customer.totalSpent)}</TableCell>
                 <TableCell>{getTierBadge(customer.tier)}</TableCell>
-                <TableCell className="font-data text-[#5a6169]">{customer.joinDate}</TableCell>
+                <TableCell className="font-data text-[#5a6169]">{formatJoinDate(customer.joinDate)}</TableCell>
               </TableRow>
             ))}
+            {!customers.length ? (
+              <TableRow className="border-[rgba(6,20,27,0.05)]">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-[#5a6169]">
+                  No customer data available from orders yet.
+                </TableCell>
+              </TableRow>
+            ) : null}
           </TableBody>
         </Table>
       </Card>

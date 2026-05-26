@@ -6,6 +6,7 @@ import {
   Image,
   Layers3,
   FileText,
+  MessageCircleMore,
   ShoppingCart,
   Users,
   Settings as SettingsIcon
@@ -21,6 +22,7 @@ export function AdminLayout() {
     { path: "/editorial", label: "Editorial", icon: FileText },
     { path: "/orders", label: "Orders", icon: ShoppingCart },
     { path: "/customers", label: "Customers", icon: Users },
+    { path: "/messages", label: "Messages", icon: MessageCircleMore },
     { path: "/settings", label: "Settings", icon: SettingsIcon },
   ];
 

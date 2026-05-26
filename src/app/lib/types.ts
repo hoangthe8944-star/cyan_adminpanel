@@ -60,10 +60,11 @@ export interface VariantSelection {
 }
 
 export interface ProductVariant {
+  productName?: string | null;
   variantCode: string;
   modelCode: string;
   styleCode: string;
-  description?: string | null;
+  fullDescription?: string | null;
   selections: VariantSelection[];
   price: number;
   compareAtPrice?: number | null;
@@ -286,6 +287,45 @@ export interface UploadResponse {
   filename: string;
   contentType: string;
   size: number;
+}
+
+export interface ConversationParticipant {
+  id: string;
+  name: string;
+  role?: string | null;
+  avatarUrl?: string | null;
+  email?: string | null;
+  phoneNumber?: string | null;
+  online?: boolean;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  participants: ConversationParticipant[];
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
+  unreadCount?: number;
+  status?: string | null;
+  assignedAdminName?: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversationId: string;
+  sender: ConversationParticipant;
+  content: string;
+  createdAt: string;
+}
+
+export interface ConversationDetail {
+  conversation: ConversationSummary;
+  messages: ConversationMessage[];
+}
+
+export interface SendConversationMessagePayload {
+  adminName: string;
+  message: string;
 }
 
 
