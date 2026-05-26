@@ -337,7 +337,7 @@ function normalizeVariantForSubmit(
 
   return {
     ...variant,
-    productName: form.name,
+    productName: (variant.productName || form.name).trim(),
     variantCode: normalizeVariantCode(variant.variantCode, fallbackSeed, normalizedModelCode, normalizedStyleCode, index),
     modelCode: normalizedModelCode,
     styleCode: normalizedStyleCode,
@@ -562,12 +562,12 @@ export function Products() {
       slug: buildAutoSlug(value),
       variants: prev.variants.map((variant) => ({
         ...variant,
-        productName: value,
+        productName: shouldSyncInheritedText(variant.productName, prev.name) ? value : variant.productName,
       })),
     }));
     setVariantTemplate((prev) => ({
       ...prev,
-      productName: value,
+      productName: shouldSyncInheritedText(prev.productName, form.name) ? value : prev.productName,
     }));
   };
 
@@ -1217,7 +1217,7 @@ export function Products() {
                                     Variant {index + 1}
                                   </div>
                                   <div className="mt-1 font-heading text-[17px] leading-snug text-[#06141B]">
-                                    {form.name || `Variant ${index + 1}`}
+                                    {variant.productName || form.name || `Variant ${index + 1}`}
                                   </div>
                                   <div className="mt-2 space-y-2 text-sm text-[#5a6169]">
                                     <div>
@@ -1269,9 +1269,17 @@ export function Products() {
                               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                 <div className="min-w-0">
                                   <FieldLabel>Product Name</FieldLabel>
-                                  <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
-                                    {form.name || "-"}
-                                  </div>
+                                  {mode === "view" ? (
+                                    <div className="rounded-xl border border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] px-4 py-3 text-sm text-[#06141B]">
+                                      {variant.productName || form.name || "-"}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      value={variant.productName || ""}
+                                      onChange={(e) => updateVariant(index, { productName: e.target.value })}
+                                      placeholder={form.name || "Variant product name"}
+                                    />
+                                  )}
                                 </div>
                                 <div className="min-w-0">
                                   <FieldLabel>Variant ID</FieldLabel>
