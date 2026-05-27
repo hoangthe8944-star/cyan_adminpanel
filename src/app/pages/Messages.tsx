@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { LoaderCircle, MessageCircleMore, RefreshCcw, Send } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { LoaderCircle, MessageCircleMore, RefreshCcw, Send, Trash2 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Button } from "../components/ui/button";
@@ -10,8 +10,9 @@ import { Textarea } from "../components/ui/textarea";
 import { adminApi } from "../lib/api";
 import type { ConversationDetail, ConversationMessage, ConversationParticipant, ConversationSummary } from "../lib/types";
 
-const DEFAULT_ADMIN_NAME = "Cyan Admin";
+const DEFAULT_ADMIN_NAME = "Oriven Admin";
 const POLLING_INTERVAL_MS = 3000;
+const DELETE_HOLD_MS = 1200;
 
 function getParticipantInitials(name: string) {
   return (
@@ -81,6 +82,10 @@ export function Messages() {
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [deletingConversationId, setDeletingConversationId] = useState("");
+  const [holdTargetConversationId, setHoldTargetConversationId] = useState("");
+  const [deleteHoldProgress, setDeleteHoldProgress] = useState(0);
+  const deleteHoldTimeoutRef = useRef<number | null>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) || detail?.conversation || null,
@@ -94,8 +99,12 @@ export function Messages() {
 
   const messages = detail?.messages ?? [];
 
-  const loadConversations = async (keepSelection = true) => {
+  const loadConversations = async (keepSelection = true, silent = false) => {
     try {
+      if (!silent) {
+        setIsLoadingConversations(true);
+      }
+
       const data = await adminApi.conversations();
       setConversations(data);
       setSelectedConversationId((current) => {
@@ -109,21 +118,32 @@ export function Messages() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to load conversations");
     } finally {
-      setIsLoadingConversations(false);
+      if (!silent) {
+        setIsLoadingConversations(false);
+      }
     }
   };
 
-  const loadConversationDetail = async (conversationId: string, shouldMarkRead = false) => {
+  const loadConversationDetail = async (
+    conversationId: string,
+    options: { shouldMarkRead?: boolean; silent?: boolean } = {}
+  ) => {
     if (!conversationId) {
       setDetail(null);
       return;
     }
 
+    const { shouldMarkRead = false, silent = false } = options;
+
     try {
-      setIsLoadingMessages(true);
+      if (!silent) {
+        setIsLoadingMessages(true);
+      }
+
       const nextDetail = shouldMarkRead
         ? await adminApi.markConversationRead(conversationId)
         : await adminApi.conversationDetail(conversationId);
+
       setDetail(nextDetail);
       setConversations((current) =>
         current.map((conversation) =>
@@ -134,8 +154,60 @@ export function Messages() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to load messages");
     } finally {
-      setIsLoadingMessages(false);
+      if (!silent) {
+        setIsLoadingMessages(false);
+      }
     }
+  };
+
+  const clearDeleteHold = () => {
+    if (deleteHoldTimeoutRef.current) {
+      window.clearTimeout(deleteHoldTimeoutRef.current);
+      deleteHoldTimeoutRef.current = null;
+    }
+
+    setHoldTargetConversationId("");
+    setDeleteHoldProgress(0);
+  };
+
+  const handleDeleteConversation = async (conversationId: string) => {
+    if (deletingConversationId) {
+      return;
+    }
+
+    setDeletingConversationId(conversationId);
+    setError("");
+
+    try {
+      await adminApi.deleteConversation(conversationId);
+      setConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
+      setSelectedConversationId((current) => (current === conversationId ? "" : current));
+      setDetail((current) => (current?.conversation.id === conversationId ? null : current));
+      await loadConversations(false, true);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to delete conversation");
+    } finally {
+      setDeletingConversationId("");
+      clearDeleteHold();
+    }
+  };
+
+  const startDeleteHold = (conversationId: string) => {
+    if (deletingConversationId) {
+      return;
+    }
+
+    clearDeleteHold();
+    setHoldTargetConversationId(conversationId);
+    setDeleteHoldProgress(0);
+
+    window.requestAnimationFrame(() => {
+      setDeleteHoldProgress(100);
+    });
+
+    deleteHoldTimeoutRef.current = window.setTimeout(() => {
+      handleDeleteConversation(conversationId);
+    }, DELETE_HOLD_MS);
   };
 
   useEffect(() => {
@@ -148,15 +220,23 @@ export function Messages() {
       return;
     }
 
-    loadConversationDetail(selectedConversationId, true);
+    loadConversationDetail(selectedConversationId, { shouldMarkRead: true });
 
     const intervalId = window.setInterval(() => {
-      loadConversationDetail(selectedConversationId);
-      loadConversations(true);
+      loadConversationDetail(selectedConversationId, { silent: true });
+      loadConversations(true, true);
     }, POLLING_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (deleteHoldTimeoutRef.current) {
+        window.clearTimeout(deleteHoldTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleManualRefresh = async () => {
     await loadConversations(true);
@@ -208,7 +288,7 @@ export function Messages() {
       {error ? <div className="mb-4 text-sm text-red-600">{error}</div> : null}
 
       <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <Card className="border-[rgba(6,20,27,0.1)] bg-white p-6">
+        <Card className="max-h-[720px] border-[rgba(6,20,27,0.1)] bg-white p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h3 className="font-heading">User Conversations</h3>
@@ -224,7 +304,7 @@ export function Messages() {
             The list auto-refreshes every {POLLING_INTERVAL_MS / 1000} seconds and follows the Spring admin chat routes.
           </div>
 
-          <div className="space-y-3">
+          <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
             {isLoadingConversations ? (
               <div className="flex items-center gap-2 rounded-2xl border border-[rgba(6,20,27,0.08)] px-4 py-5 text-sm text-[#5a6169]">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -243,50 +323,86 @@ export function Messages() {
               const participant = resolveRemoteParticipant(conversation, adminName);
 
               return (
-                <button
+                <div
                   key={conversation.id}
-                  type="button"
-                  onClick={() => setSelectedConversationId(conversation.id)}
-                  className={`w-full rounded-2xl border p-4 text-left transition ${
+                  className={`w-full rounded-2xl border p-4 transition ${
                     active
                       ? "border-[rgba(163,107,49,0.45)] bg-[rgba(237,217,135,0.12)]"
                       : "border-[rgba(6,20,27,0.08)] bg-[#fbfbfa] hover:bg-white"
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    <Avatar>
-                      <AvatarFallback className="bg-[rgba(6,20,27,0.1)] text-[#06141B]">
-                        {getParticipantInitials(participant?.name || conversation.title)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-[#06141B]">{participant?.name || conversation.title}</div>
-                          <div className="truncate text-sm text-[#5a6169]">{conversation.lastMessage || "No messages yet"}</div>
-                          <div className="mt-1 text-xs text-[#7b858e]">
-                            {conversation.status || "OPEN"}
-                            {conversation.assignedAdminName ? ` · ${conversation.assignedAdminName}` : ""}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedConversationId(conversation.id)}
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                    >
+                      <Avatar>
+                        <AvatarFallback className="bg-[rgba(6,20,27,0.1)] text-[#06141B]">
+                          {getParticipantInitials(participant?.name || conversation.title)}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-[#06141B]">{participant?.name || conversation.title}</div>
+                            <div className="truncate text-sm text-[#5a6169]">{conversation.lastMessage || "No messages yet"}</div>
+                            <div className="mt-1 text-xs text-[#7b858e]">
+                              {conversation.status || "OPEN"}
+                              {conversation.assignedAdminName ? ` · ${conversation.assignedAdminName}` : ""}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <div className="text-xs text-[#7b858e]">{formatConversationTime(conversation.lastMessageAt)}</div>
+                            {conversation.unreadCount ? (
+                              <div className="mt-2 inline-flex min-w-6 items-center justify-center rounded-full bg-[#06141B] px-2 py-1 text-xs text-white">
+                                {conversation.unreadCount}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
-                        <div className="shrink-0 text-right">
-                          <div className="text-xs text-[#7b858e]">{formatConversationTime(conversation.lastMessageAt)}</div>
-                          {conversation.unreadCount ? (
-                            <div className="mt-2 inline-flex min-w-6 items-center justify-center rounded-full bg-[#06141B] px-2 py-1 text-xs text-white">
-                              {conversation.unreadCount}
-                            </div>
-                          ) : null}
-                        </div>
                       </div>
+                    </button>
+
+                    <div className="shrink-0 text-right">
+                      <button
+                        type="button"
+                        aria-label={`Delete conversation ${conversation.id}`}
+                        title="Hold to delete conversation"
+                        onMouseDown={() => startDeleteHold(conversation.id)}
+                        onMouseUp={clearDeleteHold}
+                        onMouseLeave={clearDeleteHold}
+                        onTouchStart={() => startDeleteHold(conversation.id)}
+                        onTouchEnd={clearDeleteHold}
+                        disabled={Boolean(deletingConversationId)}
+                        className="mb-2 ml-auto flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(182,47,47,0.18)] bg-white text-[#b62f2f] transition hover:bg-[rgba(182,47,47,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {deletingConversationId === conversation.id ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+
+                      {holdTargetConversationId === conversation.id ? (
+                        <div className="mb-2 ml-auto h-1.5 w-16 overflow-hidden rounded-full bg-[rgba(182,47,47,0.12)]">
+                          <div
+                            className="h-full bg-[#b62f2f]"
+                            style={{ width: `${deleteHoldProgress}%`, transition: `width ${DELETE_HOLD_MS}ms linear` }}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         </Card>
 
-        <Card className="flex min-h-[720px] flex-col border-[rgba(6,20,27,0.1)] bg-white p-0">
+        <Card className="flex h-[720px] max-h-[720px] flex-col overflow-hidden border-[rgba(6,20,27,0.1)] bg-white p-0">
           <div className="flex items-center justify-between border-b border-[rgba(6,20,27,0.08)] px-6 py-5">
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-[rgba(237,217,135,0.18)] p-3 text-[#7b5327]">
@@ -306,7 +422,7 @@ export function Messages() {
             </div>
           </div>
 
-          <div className="flex-1 bg-[linear-gradient(180deg,rgba(248,249,249,0.2),rgba(237,217,135,0.08))] px-6 py-5">
+          <div className="flex-1 overflow-hidden bg-[linear-gradient(180deg,rgba(248,249,249,0.2),rgba(237,217,135,0.08))] px-6 py-5">
             <div className="h-full space-y-4 overflow-y-auto pr-1">
               {isLoadingMessages ? (
                 <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm text-[#5a6169] shadow-[0_8px_30px_rgba(6,20,27,0.06)]">
@@ -329,6 +445,7 @@ export function Messages() {
 
               {messages.map((message: ConversationMessage) => {
                 const mine = isOwnMessage(message.sender);
+
                 return (
                   <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                     <div className="max-w-[78%]">
@@ -340,6 +457,7 @@ export function Messages() {
                         <div className="mb-1 text-[11px] uppercase tracking-[0.18em] opacity-70">{mine ? "You" : message.sender.name}</div>
                         <div className="whitespace-pre-wrap break-words">{message.content}</div>
                       </div>
+
                       <div className={`mt-1 px-1 text-xs text-[#7b858e] ${mine ? "text-right" : "text-left"}`}>
                         {formatMessageTime(message.createdAt)}
                       </div>
@@ -362,6 +480,7 @@ export function Messages() {
                   disabled={!selectedConversationId || isSendingMessage}
                 />
               </div>
+
               <Button
                 className="h-12 bg-[#06141B] px-6 text-white hover:bg-[#0a1f29]"
                 onClick={handleSendMessage}

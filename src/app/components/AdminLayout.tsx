@@ -33,7 +33,7 @@ export function AdminLayout() {
         {/* Brand Logo */}
         <div className="p-6 border-b border-[rgba(237,217,135,0.15)]">
           <h1 className="font-heading text-[#EDD987] tracking-wide">
-            Cyan Jewelry
+            Oriven Jewelry
           </h1>
         </div>
 
@@ -69,7 +69,7 @@ export function AdminLayout() {
         {/* Footer */}
         <div className="p-4 border-t border-[rgba(237,217,135,0.15)]">
           <p className="text-sm text-[rgba(248,249,249,0.6)] font-data">
-            Cyan Admin Panel
+            Oriven Admin Panel
           </p>
         </div>
       </aside>

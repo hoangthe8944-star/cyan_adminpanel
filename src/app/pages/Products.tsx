@@ -801,7 +801,7 @@ export function Products() {
                     />
                     <div>
                       <div className="font-data">{product.name}</div>
-                      <div className="text-xs text-[#5a6169]">{product.brand || "Cyan Jewelry"}</div>
+                      <div className="text-xs text-[#5a6169]">{product.brand || "Oriven Jewelry"}</div>
                     </div>
                   </div>
                 </TableCell>

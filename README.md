@@ -36,7 +36,7 @@
 
   ```json
   {
-    "adminName": "Cyan Admin",
+    "adminName": "Oriven Admin",
     "message": "Xin chao, don hang cua ban dang duoc dong goi."
   }
   ```

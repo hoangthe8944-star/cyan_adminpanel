@@ -24,7 +24,7 @@ export function Dashboard() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="font-heading mb-2">Dashboard</h1>
-        <p className="text-[#5a6169]">Live overview from the Cyan Jewelry backend</p>
+        <p className="text-[#5a6169]">Live overview from the Oriven Jewelry backend</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

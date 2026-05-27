@@ -283,7 +283,7 @@ export function formatCurrency(value: number) {
 }
 
 export function resolveImage(url?: { url?: string | null; thumbnailUrl?: string | null } | null) {
-  return normalizeAssetUrl(url?.thumbnailUrl) || normalizeAssetUrl(url?.url) || "https://placehold.co/800x600?text=Cyan";
+  return normalizeAssetUrl(url?.thumbnailUrl) || normalizeAssetUrl(url?.url) || "https://placehold.co/800x600?text=Oriven";
 }
 
 export function parseJsonField<T>(value: string, fallback: T): T {
@@ -435,4 +435,8 @@ export const adminApi = {
     });
     return normalizeConversationDetail(raw, conversationId);
   },
+  deleteConversation: (conversationId: string) =>
+    request<void>(`${CHAT_API_PATH}/${conversationId}`, {
+      method: "DELETE",
+    }),
 };

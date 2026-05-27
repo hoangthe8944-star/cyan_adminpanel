@@ -18,7 +18,7 @@ export function Settings() {
         <div className="space-y-4">
           <div>
             <Label>Store Name</Label>
-            <Input defaultValue="Cyan Jewelry" className="mt-1.5" />
+            <Input defaultValue="Oriven Jewelry" className="mt-1.5" />
           </div>
           <div>
             <Label>Store Tagline</Label>
@@ -26,7 +26,7 @@ export function Settings() {
           </div>
           <div>
             <Label>Contact Email</Label>
-            <Input type="email" defaultValue="contact@cyanjewelry.com" className="mt-1.5" />
+            <Input type="email" defaultValue="contact@orivenjewelry.com" className="mt-1.5" />
           </div>
         </div>
       </Card>

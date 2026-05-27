@@ -131,7 +131,7 @@ export function Customers() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="font-heading mb-2">Customer Management</h1>
-        <p className="text-[#5a6169]">Live customer summary derived from Cyan order data</p>
+        <p className="text-[#5a6169]">Live customer summary derived from Oriven order data</p>
       </div>
 
       {error ? <div className="mb-4 text-sm text-red-600">{error}</div> : null}
