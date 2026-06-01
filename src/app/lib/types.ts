@@ -282,6 +282,27 @@ export interface AdminEditorialPayload {
   sections: EditorialSection[];
 }
 
+export interface AdminLandingTheme {
+  id: string;
+  slug: string;
+  name?: string | null;
+  title?: string | null;
+  active?: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+}
+
+export type AdminLandingThemePayload = Record<string, unknown>;
+
+export interface LandingThemeMediaUploadResponse {
+  media: MediaAsset;
+  filename: string;
+  contentType: string;
+  size: number;
+  resourceType: string;
+}
+
 export interface UploadResponse {
   url: string;
   filename: string;

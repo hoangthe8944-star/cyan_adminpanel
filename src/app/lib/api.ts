@@ -8,6 +8,8 @@ import type {
   AdminDashboardResponse,
   AdminEditorial,
   AdminEditorialPayload,
+  AdminLandingTheme,
+  AdminLandingThemePayload,
   AdminOrder,
   AdminProduct,
   AdminProductPayload,
@@ -15,6 +17,7 @@ import type {
   ConversationMessage,
   ConversationParticipant,
   ConversationSummary,
+  LandingThemeMediaUploadResponse,
   SendConversationMessagePayload,
   UploadResponse,
 } from "./types";
@@ -412,6 +415,42 @@ export const adminApi = {
     request<void>(`/api/admin/editorials/${id}`, {
       method: "DELETE",
     }),
+
+  landingThemes: () => request<AdminLandingTheme[]>("/api/admin/landing-themes"),
+  activeLandingTheme: () => request<AdminLandingTheme>("/api/admin/landing-themes/active"),
+  landingThemeById: (id: string) => request<AdminLandingTheme>(`/api/admin/landing-themes/${id}`),
+  landingThemeBySlug: (slug: string) => request<AdminLandingTheme>(`/api/admin/landing-themes/slug/${slug}`),
+  createLandingTheme: (payload: AdminLandingThemePayload) =>
+    request<AdminLandingTheme>("/api/admin/landing-themes", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateLandingTheme: (id: string, payload: AdminLandingThemePayload) =>
+    request<AdminLandingTheme>(`/api/admin/landing-themes/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  activateLandingTheme: (id: string) =>
+    request<AdminLandingTheme>(`/api/admin/landing-themes/${id}/activate`, {
+      method: "POST",
+    }),
+  deleteLandingTheme: (id: string) =>
+    request<void>(`/api/admin/landing-themes/${id}`, {
+      method: "DELETE",
+    }),
+  uploadLandingThemeMedia: (file: File, folder = "landing-themes", altText?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", folder);
+    if (altText?.trim()) {
+      formData.append("altText", altText.trim());
+    }
+
+    return request<LandingThemeMediaUploadResponse>("/api/admin/landing-themes/upload-media", {
+      method: "POST",
+      body: formData,
+    });
+  },
   conversations: async () => {
     const raw = await request<unknown>(CHAT_API_PATH);
     return pickCollection(raw, ["conversations", "items", "data"], (item, index) =>

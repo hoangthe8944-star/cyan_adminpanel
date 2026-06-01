@@ -6,6 +6,7 @@ import { Products } from "./pages/Products";
 import { Banners } from "./pages/Banners";
 import { Collections } from "./pages/Collections";
 import { Editorial } from "./pages/Editorial";
+import { LandingThemes } from "./pages/LandingThemes";
 import { Orders } from "./pages/Orders";
 import { Customers } from "./pages/Customers";
 import { Messages } from "./pages/Messages";
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
       { path: "banners", Component: Banners },
       { path: "collections", Component: Collections },
       { path: "editorial", Component: Editorial },
+      { path: "landing-themes", Component: LandingThemes },
       { path: "orders", Component: Orders },
       { path: "customers", Component: Customers },
       { path: "messages", Component: Messages },
