@@ -5,6 +5,7 @@ import type {
   AdminCategoryPayload,
   AdminCollection,
   AdminCollectionPayload,
+  AdminContact,
   AdminDashboardResponse,
   AdminEditorial,
   AdminEditorialPayload,
@@ -359,6 +360,11 @@ export const adminApi = {
     }),
 
   collections: () => request<AdminCollection[]>("/api/admin/collections"),
+  contacts: () => request<AdminContact[]>("/api/admin/contacts"),
+  deleteContact: (id: string) =>
+    request<void>(`/api/admin/contacts/${id}`, {
+      method: "DELETE",
+    }),
   createCollection: (payload: AdminCollectionPayload) =>
     request<AdminCollection>("/api/admin/collections", {
       method: "POST",

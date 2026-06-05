@@ -10,6 +10,7 @@ import {
   MessageCircleMore,
   ShoppingCart,
   Users,
+  Mail,
   Settings as SettingsIcon
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ export function AdminLayout() {
     { path: "/orders", label: "Orders", icon: ShoppingCart },
     { path: "/customers", label: "Customers", icon: Users },
     { path: "/messages", label: "Messages", icon: MessageCircleMore },
+    { path: "/contacts", label: "Feedbacks", icon: Mail },
     { path: "/settings", label: "Settings", icon: SettingsIcon },
   ];
 
@@ -40,7 +42,7 @@ export function AdminLayout() {
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-thin">
           {menuItems.map((item) => (
             <NavLink
               key={item.path}

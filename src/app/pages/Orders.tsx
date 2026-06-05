@@ -172,8 +172,57 @@ export function Orders() {
                 <TableCell className="font-data text-[#5a6169]">{order.items.map((item) => item.productName).join(", ")}</TableCell>
                 <TableCell className="font-data text-[#5a6169]">{order.paymentMethod}</TableCell>
                 <TableCell className="font-data text-[#A36B31]">{formatCurrency(order.totalAmount)}</TableCell>
-                <TableCell><Badge className="bg-[rgba(237,217,135,0.2)] text-[#A36B31] border-0 capitalize">{order.orderStatus}</Badge></TableCell>
-                <TableCell className="font-data text-[#5a6169]">{order.paymentStatus}</TableCell>
+                <TableCell>
+                  <Select
+                    value={order.orderStatus}
+                    onValueChange={async (newStatus) => {
+                      try {
+                        await adminApi.updateOrderStatus(order.id, newStatus, order.paymentStatus);
+                        loadOrders();
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to update order status");
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[140px] bg-transparent border-[rgba(6,20,27,0.14)] text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="PENDING">PENDING</SelectItem>
+                      <SelectItem value="AWAITING_PAYMENT">AWAITING_PAYMENT</SelectItem>
+                      <SelectItem value="PAID">PAID</SelectItem>
+                      <SelectItem value="PROCESSING">PROCESSING</SelectItem>
+                      <SelectItem value="SHIPPED">SHIPPED</SelectItem>
+                      <SelectItem value="COMPLETED">COMPLETED</SelectItem>
+                      <SelectItem value="CANCELED">CANCELED</SelectItem>
+                      <SelectItem value="FAILED">FAILED</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell>
+                  <Select
+                    value={order.paymentStatus}
+                    onValueChange={async (newPaymentStatus) => {
+                      try {
+                        await adminApi.updateOrderStatus(order.id, order.orderStatus, newPaymentStatus);
+                        loadOrders();
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to update payment status");
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[130px] bg-transparent border-[rgba(6,20,27,0.14)] text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="UNPAID">UNPAID</SelectItem>
+                      <SelectItem value="PENDING">PENDING</SelectItem>
+                      <SelectItem value="PAID">PAID</SelectItem>
+                      <SelectItem value="REFUNDED">REFUNDED</SelectItem>
+                      <SelectItem value="FAILED">FAILED</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => openDetail(order)}><Eye className="w-4 h-4" /></Button>

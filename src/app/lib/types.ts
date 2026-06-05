@@ -349,4 +349,13 @@ export interface SendConversationMessagePayload {
   message: string;
 }
 
-
+export interface AdminContact {
+  id: string;
+  customerName: string;
+  email: string;
+  phoneNumber?: string | null;
+  subject: string;
+  message: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
